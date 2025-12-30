@@ -1,6 +1,6 @@
 
-import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord } from './types';
-import { TRAINING_PLANS } from './constants';
+import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord, Testimonial } from './types';
+import { TRAINING_PLANS, TESTIMONIALS } from './constants';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'fitlife_vault_key_2024';
@@ -78,6 +78,21 @@ export const api = {
     const res = await fetchSafe(`${API_BASE}/plans`);
     const json = await res.json();
     return (json.success && json.data?.length) ? json.data : TRAINING_PLANS;
+  },
+  getTestimonials: async (): Promise<Testimonial[]> => {
+    const res = await fetchSafe(`${API_BASE}/testimonials`);
+    const json = await res.json();
+    if (json.success && json.data?.length) {
+      return json.data.map((t: any) => ({
+        id: t.id,
+        clientName: t.client_name,
+        clientTitle: t.client_title,
+        quote: t.quote,
+        rating: t.rating,
+        isFeatured: t.is_featured
+      }));
+    }
+    return TESTIMONIALS;
   },
   submitLead: async (formData: Lead) => {
     const res = await fetchSafe(`${API_BASE}/leads`, { method: 'POST', body: JSON.stringify(formData) });

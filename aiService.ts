@@ -1,6 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
-import { TRAINING_PLANS } from "./constants";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { MemberProgress } from "./types";
 
 const SYSTEM_PROMPT = `You are COACH BOLT, a world-class High-Performance Executive Fitness Coach. 
@@ -47,12 +46,14 @@ export class FitnessChatSession {
     ).join(" | ");
 
     try {
+      // Upgrading to Pro for deeper bio-data analysis
       const response = await this.ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3-pro-preview",
         contents: `Analyze this athlete's progress data and provide a 3-sentence "Strategic Briefing". Be intense and data-driven: ${dataString}`,
         config: {
           systemInstruction: "You are COACH BOLT. Provide a high-energy, surgical analysis of progress logs. Focus on trends and biological output.",
           temperature: 0.9,
+          thinkingConfig: { thinkingBudget: 4000 }
         }
       });
       return response.text?.toUpperCase() || "ANALYSIS DEGRADED.";
@@ -64,17 +65,32 @@ export class FitnessChatSession {
   async generateLeadStrategy(name: string, goal: string): Promise<string> {
     try {
       const response = await this.ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3-pro-preview",
         contents: `Draft a 2-sentence "Battle Plan" for a new lead named ${name} who wants to achieve: "${goal}". Make it sound elite.`,
         config: {
           systemInstruction: "You are a Super Admin analyzing lead intake. Provide a cold, calculated, high-energy 30-day strategy.",
           temperature: 0.8,
+          thinkingConfig: { thinkingBudget: 2000 }
         }
       });
       return response.text || "NO STRATEGY GENERATED.";
     } catch (e) {
       return "STRATEGY PENDING MANUAL REVIEW.";
     }
+  }
+
+  async connectLive(callbacks: any) {
+    return this.ai.live.connect({
+      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      callbacks,
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+        },
+        systemInstruction: SYSTEM_PROMPT + ' You are now in a real-time voice call. Keep responses concise and motivating.',
+      },
+    });
   }
 }
 

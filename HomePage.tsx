@@ -35,12 +35,10 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginMember, user }) => {
       try {
         const [p, t] = await Promise.all([
           api.getPlans(),
-          api.getUsersByRole('testimonial') // Using generic role fetch as placeholder for featured testimonials
+          api.getTestimonials()
         ]);
         setPlans(p);
-        // Note: api object might need specific featured testimonials method, 
-        // fallback to dummy data logic if server isn't ready
-        setTestimonials(t.length ? t : []); 
+        setTestimonials(t); 
       } catch (err) {
         console.error("Fetch Error:", err);
       } finally {

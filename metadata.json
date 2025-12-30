@@ -1,5 +1,7 @@
 {
   "name": "FitLife Pro",
   "description": "High-conversion landing page for fitness coaching featuring lead capture and plan showcasing.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

@@ -10,7 +10,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// SUPABASE FIX: Ignore self-signed certs (Supavisor pooler requirement)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
@@ -19,7 +18,6 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 
 const stripe = new Stripe(STRIPE_SECRET);
 
-// --- DB CONFIG ---
 const DB_PASSWORD = "Colony082987Fit";
 const DEFAULT_REF = "euuqfcglulkeyxaqcpvz";
 
@@ -39,7 +37,7 @@ pg.defaults.ssl = true;
 const sequelize = new Sequelize(getConnectionString(), {
   dialect: 'postgres',
   dialectModule: pg,
-  logging: console.log, // Enabled for debugging schema issues
+  logging: false, 
   dialectOptions: {
     ssl: { require: true, rejectUnauthorized: false },
     keepAlive: true,
@@ -48,14 +46,19 @@ const sequelize = new Sequelize(getConnectionString(), {
   pool: { max: 5, min: 1, acquire: 60000, idle: 10000 }
 });
 
-// --- MODELS ---
+const timestampConfig = {
+  created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  updated_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
+};
+
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   phone: { type: DataTypes.STRING, allowNull: false },
   goal: { type: DataTypes.TEXT },
   source: { type: DataTypes.STRING, defaultValue: 'Contact_Form' },
-  status: { type: DataTypes.STRING, defaultValue: 'New' }
+  status: { type: DataTypes.STRING, defaultValue: 'New' },
+  ...timestampConfig
 }, { tableName: 'leads', underscored: true, timestamps: true });
 
 const Profile = sequelize.define('Profile', {
@@ -66,7 +69,8 @@ const Profile = sequelize.define('Profile', {
   role: { type: DataTypes.STRING, defaultValue: 'member' },
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
-  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' }
+  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
+  ...timestampConfig
 }, { tableName: 'profiles', underscored: true, timestamps: true });
 
 const TrainingPlan = sequelize.define('TrainingPlan', {
@@ -74,10 +78,19 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   name: { type: DataTypes.STRING, allowNull: false },
   price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   description: DataTypes.TEXT,
-  features: { type: DataTypes.JSONB, defaultValue: [] }
+  features: { type: DataTypes.JSONB, defaultValue: [] },
+  ...timestampConfig
 }, { tableName: 'plans', underscored: true, timestamps: true });
 
-// --- MIDDLEWARE ---
+const Testimonial = sequelize.define('Testimonial', {
+  client_name: { type: DataTypes.STRING, allowNull: false },
+  client_title: { type: DataTypes.STRING },
+  quote: { type: DataTypes.TEXT, allowNull: false },
+  rating: { type: DataTypes.INTEGER, defaultValue: 5 },
+  is_featured: { type: DataTypes.BOOLEAN, defaultValue: true },
+  ...timestampConfig
+}, { tableName: 'testimonials', underscored: true, timestamps: true });
+
 app.use(cors());
 app.use(express.json());
 
@@ -90,8 +103,6 @@ const auth = (req, res, next) => {
   } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
 };
 
-// --- ROUTES ---
-
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.query('SELECT 1+1 AS result');
@@ -101,57 +112,71 @@ app.get('/api/system/health', async (req, res) => {
   }
 });
 
-/**
- * REPAIR & BOOTSTRAP
- */
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    console.log("[BOOTSTRAP] Commencing schema sanitization...");
-
-    // Manual backfill of NULLs to avoid NOT NULL constraint errors
     await sequelize.query(`
       DO $$ 
       DECLARE
         t text;
       BEGIN 
-        FOR t IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('plans', 'leads', 'profiles')
+        FOR t IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('plans', 'leads', 'profiles', 'testimonials')
         LOOP
+          BEGIN
+            EXECUTE 'ALTER TABLE ' || t || ' ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()';
+            EXECUTE 'ALTER TABLE ' || t || ' ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()';
+          EXCEPTION WHEN others THEN NULL;
+          END;
           EXECUTE 'UPDATE ' || t || ' SET created_at = NOW() WHERE created_at IS NULL';
           EXECUTE 'UPDATE ' || t || ' SET updated_at = NOW() WHERE updated_at IS NULL';
         END LOOP;
       END $$;
     `);
 
-    // Sync with Alter
     await sequelize.sync({ alter: true });
     
-    // Seed Admin
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
 
-    // Seed Plans
     if (await TrainingPlan.count() === 0) {
       await TrainingPlan.bulkCreate([
         { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
         { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'Rapid transformation.', features: ['Custom Programming', 'Direct Messaging'] },
         { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] },
-        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'VIP experience.', features: ['1-on-1 Coaching', 'Personal Chef Meal Planning'] }
+        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'VIP bespoke experience.', features: ['1-on-1 Coaching', 'Personal Chef Meal Planning'] }
       ]);
     }
 
-    res.json({ success: true, message: 'Vault initialized and repaired.' });
+    if (await Testimonial.count() === 0) {
+      await Testimonial.bulkCreate([
+        { client_name: 'Sarah Jenkins', client_title: 'Executive Director', quote: "The Elite Executive plan changed my body and my clarity at work.", rating: 5 },
+        { client_name: 'Marcus V.', client_title: 'Founder', quote: "Pinnacle coaching is the only way to train. Surgical attention to detail.", rating: 5 },
+        { client_name: 'David L.', client_title: 'Software Architect', quote: "Science-backed results. Got to 8% body fat in record time.", rating: 5 }
+      ]);
+    }
+
+    res.json({ success: true, message: 'Infrastructure Ready and Sanitized.' });
   } catch (e) { 
-    console.error("[BOOTSTRAP ERROR]", e);
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
 
+app.get('/api/testimonials', async (req, res) => {
+  try {
+    const t = await Testimonial.findAll({ order: [['created_at', 'DESC']] });
+    res.json({ success: true, data: t });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 app.get('/api/profiles', async (req, res) => {
   try {
-    const profiles = await Profile.findAll({ attributes: { exclude: ['password'] } });
+    const { role } = req.query;
+    const profiles = await Profile.findAll({ 
+      where: role ? { role } : {},
+      attributes: { exclude: ['password'] } 
+    });
     res.json({ success: true, data: profiles });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
@@ -168,6 +193,13 @@ app.post('/api/profiles/login', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+app.get('/api/profiles/me', auth, async (req, res) => {
+  try {
+    const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
@@ -175,16 +207,16 @@ app.post('/api/leads', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/plans', async (req, res) => {
+app.get('/api/leads/all', auth, async (req, res) => {
   try {
-    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
-    res.json({ success: true, data: p });
+    const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
+    res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/profiles/me', auth, async (req, res) => {
+app.get('/api/plans', async (req, res) => {
   try {
-    const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
+    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
