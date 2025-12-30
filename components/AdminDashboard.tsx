@@ -6,7 +6,7 @@ import { FitnessChatSession } from '../aiService';
 import { 
   Users, LogOut, RefreshCw, Activity, Menu, X, 
   Loader2, Sparkles, Home, Database, Sword, Terminal,
-  LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog
+  LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog, Trash2
 } from 'lucide-react';
 import { TRAINING_PLANS } from '../constants';
 
@@ -32,6 +32,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [assignmentData, setAssignmentData] = useState<Partial<UserProfile>>({});
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -41,22 +42,28 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       const healthData = await healthRes.json();
       if (healthData.success) setDbHost(healthData.host);
 
+      // Super Admins should see everyone, including other super admins and admins
       const coachIdFilter = user.role === 'super_admin' ? undefined : user.id;
-      const [l, m, a] = await Promise.all([
+      
+      const [l, m, a, sa] = await Promise.all([
         api.getAllLeads(),
         api.getUsersByRole('member', coachIdFilter),
-        api.getUsersByRole('admin') // Also gets super_admins usually if backend logic allows, or we might need separate calls
+        api.getUsersByRole('admin'),
+        user.role === 'super_admin' ? api.getUsersByRole('super_admin') : Promise.resolve([])
       ]);
       
       setLeads(l || []);
       setMembers(m || []);
-      setAdmins(a || []);
+      // Combine admins and super admins for the staff view, avoiding duplicates if any
+      const allStaff = [...(a || []), ...(sa || [])].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i);
+      setAdmins(allStaff);
+
     } catch (err: any) { 
       setErrorHint(err.message || 'Vault infrastructure unresponsive.');
     } finally { 
       setLoading(false); 
     }
-  }, [user.id]);
+  }, [user.id, user.role]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -98,7 +105,8 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       role: u.role,
       assignedNutritionistName: u.assignedNutritionistName,
       name: u.name,
-      phone: u.phone
+      phone: u.phone,
+      email: u.email
     });
   };
 
@@ -118,6 +126,26 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       alert('Network error');
     } finally {
       setIsSavingAssignment(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!editingUser) return;
+    if (!confirm(`WARNING: You are about to terminate ${editingUser.name}'s profile. This action cannot be undone. Confirm deletion?`)) return;
+    
+    setIsDeleting(true);
+    try {
+      const res = await api.deleteProfile(editingUser.id);
+      if (res.success) {
+        setEditingUser(null);
+        loadAll();
+      } else {
+        alert(res.message || 'Deletion failed');
+      }
+    } catch (err) {
+      alert('Network error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -164,7 +192,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
             <div className="w-10 h-10 bg-white text-black flex items-center justify-center rounded-lg font-black italic text-xl">FP</div>
             <div>
               <h2 className="text-xl font-black italic tracking-tighter text-white uppercase leading-none">VAULT</h2>
-              <p className="text-[8px] font-black text-fuchsia-500 uppercase tracking-[0.4em] mt-1">Super Admin</p>
+              <p className="text-[8px] font-black text-fuchsia-500 uppercase tracking-[0.4em] mt-1">{user.role.replace('_', ' ')}</p>
             </div>
           </div>
           <div className="mt-6 flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full w-fit">
@@ -190,6 +218,13 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5">
+           <button 
+              onClick={() => handleOpenAssignment(user)}
+              className="w-full flex items-center justify-start gap-3 mb-4 text-zinc-400 hover:text-white transition-colors"
+           >
+              <UserCog className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Edit My Profile</span>
+           </button>
            <div className="flex items-center gap-2 mb-6 px-4 text-zinc-600">
               <Database className="w-3 h-3" />
               <span className="text-[8px] font-black uppercase tracking-widest truncate">{dbHost || 'Syncing...'}</span>
@@ -441,6 +476,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
               <div className="mb-8">
                  <h2 className="text-3xl font-black italic uppercase text-white mb-2">Reassign / Edit</h2>
                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em]">{editingUser.name}</p>
+                 <p className="text-[9px] font-bold text-zinc-600 mt-1">{editingUser.email}</p>
               </div>
 
               <form onSubmit={handleSaveAssignment} className="space-y-6">
@@ -464,8 +500,25 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                    />
                 </div>
 
-                {/* Member Specific Fields */}
-                {editingUser.role === 'member' && (
+                {/* SUPER ADMIN: Role Management */}
+                {user.role === 'super_admin' && (
+                   <div className="space-y-2">
+                       <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><ShieldCheck className="w-3 h-3" /> Role Authorization</label>
+                       <select 
+                         className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white focus:border-fuchsia-500 outline-none appearance-none"
+                         value={assignmentData.role || 'member'}
+                         onChange={e => setAssignmentData({...assignmentData, role: e.target.value as UserRole})}
+                       >
+                         <option value="member" className="bg-zinc-900">Member</option>
+                         <option value="admin" className="bg-zinc-900">Admin (Coach)</option>
+                         <option value="super_admin" className="bg-zinc-900">Super Admin</option>
+                         <option value="nutritionist" className="bg-zinc-900">Nutritionist</option>
+                       </select>
+                   </div>
+                )}
+
+                {/* Member Specific Fields (Render based on TARGET role, not original) */}
+                {assignmentData.role === 'member' && (
                   <>
                     <div className="space-y-2">
                        <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><Briefcase className="w-3 h-3" /> Assigned Coach</label>
@@ -513,27 +566,22 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                   </>
                 )}
 
-                {/* Staff Specific Fields */}
-                {editingUser.role !== 'member' && (
-                   <div className="space-y-2">
-                       <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><ShieldCheck className="w-3 h-3" /> Role Authorization</label>
-                       <select 
-                         className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white focus:border-fuchsia-500 outline-none appearance-none"
-                         value={assignmentData.role || ''}
-                         onChange={e => setAssignmentData({...assignmentData, role: e.target.value as UserRole})}
-                       >
-                         <option value="admin" className="bg-zinc-900">Admin (Coach)</option>
-                         <option value="super_admin" className="bg-zinc-900">Super Admin</option>
-                         <option value="nutritionist" className="bg-zinc-900">Nutritionist</option>
-                       </select>
-                   </div>
-                )}
-
-                <div className="pt-6">
+                <div className="pt-6 flex gap-4">
+                   {user.role === 'super_admin' && editingUser.id !== user.id && (
+                     <button
+                       type="button"
+                       disabled={isDeleting || isSavingAssignment}
+                       onClick={handleDeleteUser}
+                       className="px-6 bg-red-600/10 border border-red-600/30 text-red-500 py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-red-600 hover:text-white transition-all disabled:opacity-50"
+                     >
+                       {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                     </button>
+                   )}
+                   
                    <button 
                       disabled={isSavingAssignment}
                       type="submit" 
-                      className="w-full bg-fuchsia-600 text-white py-5 rounded-full font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl"
+                      className="flex-1 bg-fuchsia-600 text-white py-5 rounded-full font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl"
                     >
                       {isSavingAssignment ? <Loader2 className="w-4 h-4 animate-spin" /> : "Commit Changes"}
                     </button>

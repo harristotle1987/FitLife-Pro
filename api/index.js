@@ -218,6 +218,21 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
   }
 });
 
+app.delete('/api/profiles/:id', adminAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'super_admin') {
+       return res.status(403).json({ success: false, message: 'Only Super Admin can terminate profiles.' });
+    }
+    const { id } = req.params;
+    const deleted = await Profile.destroy({ where: { id } });
+    if (deleted) {
+      res.json({ success: true, message: 'Profile terminated from Vault.' });
+    } else {
+      res.status(404).json({ success: false, message: 'Profile not found.' });
+    }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 app.post('/api/profiles/login', async (req, res) => {
   try {
     const p = await Profile.findOne({ where: { email: req.body.email } });

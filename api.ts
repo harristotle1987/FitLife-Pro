@@ -78,6 +78,10 @@ export const api = {
     const res = await fetchSafe(`${API_BASE}/profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
     return res.json();
   },
+  deleteProfile: async (id: string): Promise<{success: boolean, message?: string}> => {
+    const res = await fetchSafe(`${API_BASE}/profiles/${id}`, { method: 'DELETE' });
+    return res.json();
+  },
   getPlans: async (): Promise<TrainingPlan[]> => {
     const res = await fetchSafe(`${API_BASE}/plans`);
     const json = await res.json();
