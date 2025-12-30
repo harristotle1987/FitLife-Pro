@@ -75,6 +75,7 @@ const Profile = sequelize.define('Profile', {
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
   assignedNutritionistName: { type: DataTypes.STRING },
   nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
+  permissions: { type: DataTypes.JSONB, defaultValue: {} },
   ...timestampConfig
 }, { tableName: 'profiles', underscored: true, timestamps: true });
 
@@ -141,7 +142,8 @@ app.get('/api/system/bootstrap', async (req, res) => {
       ['assigned_coach_name', 'TEXT'],
       ['assigned_nutritionist_name', 'TEXT'],
       ['nutritional_protocol', 'TEXT'],
-      ['role', 'TEXT']
+      ['role', 'TEXT'],
+      ['permissions', 'JSONB']
     ];
 
     for (const [col, type] of columns) {
@@ -176,7 +178,8 @@ app.post('/api/profiles/manual', adminAuth, async (req, res) => {
       password: hash,
       role: role || 'member',
       phone: phone || '',
-      activePlanId: activePlanId || 'plan_starter'
+      activePlanId: activePlanId || 'plan_starter',
+      permissions: {}
     });
     res.json({ success: true, data: p });
   } catch (e) {

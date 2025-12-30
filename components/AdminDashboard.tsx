@@ -1,12 +1,12 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
-import { Lead, UserProfile, UserRole } from '../types';
+import { Lead, UserProfile, UserRole, AdminPermissions } from '../types';
 import { FitnessChatSession } from '../aiService';
 import { 
   Users, LogOut, RefreshCw, Activity, Menu, X, 
   Loader2, Sparkles, Home, Database, Sword, Terminal,
-  LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog, Trash2
+  LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog, Trash2, CheckSquare
 } from 'lucide-react';
 import { TRAINING_PLANS } from '../constants';
 
@@ -106,7 +106,8 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       assignedNutritionistName: u.assignedNutritionistName,
       name: u.name,
       phone: u.phone,
-      email: u.email
+      email: u.email,
+      permissions: u.permissions || {}
     });
   };
 
@@ -149,6 +150,17 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
     }
   };
 
+  const togglePermission = (key: keyof AdminPermissions) => {
+    const current = assignmentData.permissions || {};
+    setAssignmentData({
+      ...assignmentData,
+      permissions: {
+        ...current,
+        [key]: !current[key]
+      }
+    });
+  };
+
   const handleBootstrap = async () => {
     setIsBootstrapping(true);
     try {
@@ -166,6 +178,14 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
     { id: 'staff', label: 'Squad', icon: ShieldCheck },
     { id: 'protocols', label: 'Plans', icon: Layers },
   ];
+
+  const PERMISSION_LABELS: Record<keyof AdminPermissions, string> = {
+    canManageLeads: "Manage Intake (Leads)",
+    canManageProgress: "Manage Matrix (Progress)",
+    canManageAdmins: "Manage Squad (Staff)",
+    canManagePlans: "Manage Protocols (Plans)",
+    canManageNutrition: "Manage Nutrition"
+  };
 
   return (
     <div className="min-h-screen bg-[#020617] text-zinc-100 flex font-sans overflow-hidden">
@@ -470,7 +490,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       {/* Assignment Editor Modal */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[250] flex items-center justify-center p-8 animate-fade-in">
-           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-lg relative shadow-[0_0_100px_rgba(192,38,211,0.2)]">
+           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-lg relative shadow-[0_0_100px_rgba(192,38,211,0.2)] max-h-[90vh] overflow-y-auto custom-scrollbar">
               <button onClick={() => setEditingUser(null)} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors"><X className="w-8 h-8" /></button>
               
               <div className="mb-8">
@@ -564,6 +584,34 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                        />
                     </div>
                   </>
+                )}
+
+                {/* Sub-Admin / Nutritionist Permissions (Duties) */}
+                {(assignmentData.role === 'admin' || assignmentData.role === 'nutritionist') && (
+                   <div className="space-y-4 pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2">
+                         <ShieldAlert className="w-4 h-4 text-fuchsia-500" />
+                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Operational Duties</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                         {(Object.keys(PERMISSION_LABELS) as Array<keyof AdminPermissions>).map((key) => (
+                           <label key={key} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors">
+                              <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                                assignmentData.permissions?.[key] ? 'bg-fuchsia-600 border-fuchsia-600 text-white' : 'border-zinc-700 bg-zinc-900'
+                              }`}>
+                                {assignmentData.permissions?.[key] && <CheckSquare className="w-3 h-3" />}
+                                <input 
+                                  type="checkbox" 
+                                  className="hidden" 
+                                  checked={!!assignmentData.permissions?.[key]}
+                                  onChange={() => togglePermission(key)}
+                                />
+                              </div>
+                              <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">{PERMISSION_LABELS[key]}</span>
+                           </label>
+                         ))}
+                      </div>
+                   </div>
                 )}
 
                 <div className="pt-6 flex gap-4">
