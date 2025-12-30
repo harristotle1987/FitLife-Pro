@@ -16,17 +16,25 @@ const App = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const currentUser = await api.getCurrentUser();
-      if (currentUser) {
-        setUser(currentUser);
-        // Default view based on role
-        if (currentUser.role === 'member') {
-          setView('member');
-        } else {
-          setView('admin');
-        }
+      // Check for token existence to avoid unnecessary loading states for new visitors
+      const token = localStorage.getItem('fitlife_vault_key_2024');
+      if (!token) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      try {
+        const currentUser = await api.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+          // We land on 'home' by default to ensure the landing page is accessible.
+          // Users can navigate to their dashboard via the 'Vault'/'Dashboard' button in the Navbar.
+        }
+      } catch (err) {
+        console.error("Auth check failed:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     checkAuth();
   }, []);
@@ -34,6 +42,7 @@ const App = () => {
   const handleLoginSuccess = (profile: UserProfile) => {
     setUser(profile);
     setShowLogin(false);
+    // After a fresh login, take them directly to their operational dashboard
     if (profile.role === 'member') {
       setView('member');
     } else {
