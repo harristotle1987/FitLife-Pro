@@ -1,16 +1,16 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { api } from '../api';
-import { Lead, UserProfile, UserRole, AdminPermissions, MemberProgress, TrainingPlan } from '../types';
-import { FitnessChatSession } from '../aiService';
-import * as assets from '../assets';
+import { api } from '../api.ts';
+import { Lead, UserProfile, UserRole, AdminPermissions, MemberProgress, TrainingPlan } from '../types.ts';
+import { FitnessChatSession } from '../aiService.ts';
+import * as assets from '../assets.ts';
 import { 
   Users, LogOut, RefreshCw, Activity, Menu, X, 
   Loader2, Sparkles, Home, Database, Sword, Terminal,
   LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog, Trash2, CheckSquare,
   LineChart, PlusCircle, Save, BrainCircuit, Calendar
 } from 'lucide-react';
-import { TRAINING_PLANS } from '../constants';
+import { TRAINING_PLANS } from '../constants.ts';
 
 const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
   const [activeTab, setActiveTab] = useState<'leads' | 'members' | 'staff' | 'protocols'>('leads');

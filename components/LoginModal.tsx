@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { X, Lock, Mail, Loader2, ArrowRight, ShieldCheck, UserPlus, User } from 'lucide-react';
-import { api } from '../api';
-import { UserProfile } from '../types';
+import { api } from '../api.ts';
+import { UserProfile } from '../types.ts';
 
 interface LoginModalProps {
   onClose: () => void;

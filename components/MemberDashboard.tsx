@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { UserProfile, MemberProgress } from '../types';
-import { api } from '../api';
-import { createChatSession } from '../aiService';
-import * as assets from '../assets';
+import { UserProfile, MemberProgress } from '../types.ts';
+import { api } from '../api.ts';
+import { createChatSession } from '../aiService.ts';
+import * as assets from '../assets.ts';
 import { Home, LogOut, Calendar, Loader2, Sparkles, BrainCircuit, Salad, Info, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
 
 // PCM Audio Helper Functions (per Gemini SDK Guidelines)

@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
-import { TrainingPlan } from '../types';
+import { TrainingPlan } from '../types.ts';
 import { Check, ArrowRight, Crown, Loader2, MessageCircle } from 'lucide-react';
-import { api } from '../api';
+import { api } from '../api.ts';
 
 interface PlanCardProps {
   plan: TrainingPlan;
