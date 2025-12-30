@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import HomePage from './HomePage';
-import AdminDashboard from './components/AdminDashboard';
-import MemberDashboard from './components/MemberDashboard';
-import LoginModal from './components/LoginModal';
-import { UserProfile } from './types';
-import { api } from './api';
+import HomePage from './HomePage.tsx';
+import AdminDashboard from './components/AdminDashboard.tsx';
+import MemberDashboard from './components/MemberDashboard.tsx';
+import LoginModal from './components/LoginModal.tsx';
+import { UserProfile } from './types.ts';
+import { api } from './api.ts';
 import { Loader2 } from 'lucide-react';
 
 const App = () => {
@@ -29,9 +29,8 @@ const App = () => {
           setUser(currentUser);
         }
       } catch (err) {
-        console.error("Critical Auth Sync Failure:", err);
+        console.error("Auth check encountered a non-fatal interruption:", err);
       } finally {
-        // Ensure app becomes interactive regardless of auth success/fail
         setLoading(false);
       }
     };
@@ -42,7 +41,6 @@ const App = () => {
   const handleLoginSuccess = (profile: UserProfile) => {
     setUser(profile);
     setShowLogin(false);
-    // Redirect to relevant operative environment
     if (profile.role === 'member') {
       setView('member');
     } else {

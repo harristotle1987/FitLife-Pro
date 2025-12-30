@@ -1,21 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import Hero from './components/Hero';
-import About from './components/About';
-import Services from './components/Services';
-import Facilities from './components/Facilities';
-import Team from './components/Team';
-import Nutrition from './components/Nutrition';
-import Testimonials from './components/Testimonials';
-import Contact from './components/Contact';
-import TrustedPayment from './components/TrustedPayment';
-import Footer from './components/Footer';
-import FloatingWidget from './components/FloatingWidget';
-import AiAssistant from './components/AiAssistant';
-import InfoModals, { InfoModalType } from './components/InfoModals';
-import { UserProfile, TrainingPlan, Testimonial } from './types';
-import { api } from './api';
+import Navbar from './components/Navbar.tsx';
+import Hero from './components/Hero.tsx';
+import About from './components/About.tsx';
+import Services from './components/Services.tsx';
+import Facilities from './components/Facilities.tsx';
+import Team from './components/Team.tsx';
+import Nutrition from './components/Nutrition.tsx';
+import Testimonials from './components/Testimonials.tsx';
+import Contact from './components/Contact.tsx';
+import TrustedPayment from './components/TrustedPayment.tsx';
+import Footer from './components/Footer.tsx';
+import FloatingWidget from './components/FloatingWidget.tsx';
+import AiAssistant from './components/AiAssistant.tsx';
+import InfoModals, { InfoModalType } from './components/InfoModals.tsx';
+import { UserProfile, TrainingPlan, Testimonial } from './types.ts';
+import { api } from './api.ts';
 
 interface HomePageProps {
   onLoginMember: () => void;
