@@ -17,45 +17,42 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 const stripe = new Stripe(STRIPE_SECRET);
 
 // --- DATABASE CONFIGURATION ---
-// User confirmed password: Colony082987Fit
-const DIRECT_URL = "postgresql://postgres:Colony082987Fit@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
+// User confirmed: db.euuqfcglulkeyxaqcpvz.supabase.co
+const VERIFIED_PG_URL = "postgresql://postgres:Colony082987Fit@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
 
-// We check if the provided env var is valid (i.e., starts with postgresql:// or postgres://)
-// If it starts with https://, it's a Supabase API URL, which causes Sequelize to crash.
-let connectionString = process.env.DATABASE_URL || DIRECT_URL;
+// Select the best possible connection string
+let connectionString = VERIFIED_PG_URL;
+const envUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-if (connectionString.startsWith('https')) {
-  console.warn("CRITICAL: DATABASE_URL is set to an HTTPS link. This is likely an API URL, not a DB string. Falling back to direct PostgreSQL connection.");
-  connectionString = DIRECT_URL;
+if (envUrl && (envUrl.startsWith('postgres://') || envUrl.startsWith('postgresql://'))) {
+  connectionString = envUrl;
+} else if (envUrl && envUrl.startsWith('https')) {
+  console.warn("SYSTEM: DATABASE_URL is an HTTPS link. Ignoring and using verified Direct PG URL.");
 }
 
-// Initialize Sequelize with robust error handling for Serverless
-let sequelize;
-try {
-  sequelize = new Sequelize(connectionString, {
-    dialect: 'postgres', // Force dialect to prevent 'https' inference
-    dialectModule: pg,
-    logging: false,
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
-      },
-      connectTimeout: 30000 // Extended for Vercel cold starts
+// Initialize Sequelize
+const sequelize = new Sequelize(connectionString, {
+  dialect: 'postgres',
+  dialectModule: pg,
+  logging: false,
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false
     },
-    pool: {
-      max: 1, // Crucial for Serverless + Supabase
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
-  });
-} catch (err) {
-  console.error("SEQUELIZE_INIT_CRITICAL_ERROR:", err.message);
-}
+    connectTimeout: 60000 // 60s for cold starts
+  },
+  pool: {
+    max: 1, // Stay under Supabase limits
+    min: 0,
+    acquire: 60000,
+    idle: 10000
+  }
+});
 
 // --- MODELS ---
-
+// Defining models on the sequelize instance immediately. 
+// If constructor fails (it shouldn't now with fixed dialect), these would throw.
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -99,14 +96,6 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   stripePriceId: { type: DataTypes.STRING }
 }, { tableName: 'plans', underscored: true, timestamps: true });
 
-const Testimonial = sequelize.define('Testimonial', {
-  clientName: { type: DataTypes.STRING, allowNull: false },
-  clientTitle: { type: DataTypes.STRING },
-  quote: { type: DataTypes.TEXT, allowNull: false },
-  isFeatured: { type: DataTypes.BOOLEAN, defaultValue: false },
-  rating: { type: DataTypes.INTEGER, defaultValue: 5 }
-}, { tableName: 'testimonials', underscored: true, timestamps: true });
-
 // --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
@@ -125,39 +114,41 @@ const checkRole = (roles) => (req, res, next) => {
   next();
 };
 
-// --- SYSTEM ROUTES ---
+// --- ROUTES ---
 
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ success: true, status: 'operational', database: 'connected' });
+    res.json({ 
+      success: true, 
+      status: 'operational', 
+      database: 'connected',
+      host: sequelize.config.host
+    });
   } catch (e) {
-    res.status(503).json({ success: false, status: 'degraded', error: e.message });
+    console.error("HEALTH_CHECK_FAILED:", e.message);
+    res.status(503).json({ 
+      success: false, 
+      status: 'degraded', 
+      error: e.message,
+      hint: "Check if Supabase project is active and credentials are correct."
+    });
   }
 });
 
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    console.info("Starting bootstrap...");
     await sequelize.sync({ alter: true });
-    
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     const [admin, created] = await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
-      defaults: { 
-        name: 'Super Admin', 
-        password: hash, 
-        role: 'super_admin' 
-      } 
+      defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
-    
-    res.json({ success: true, message: 'System Synced.', adminCreated: created });
+    res.json({ success: true, message: 'Schema Synced.', adminCreated: created });
   } catch (e) { 
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
-
-// --- CORE ROUTES ---
 
 app.post('/api/profiles/login', async (req, res) => {
   try {
@@ -174,7 +165,6 @@ app.post('/api/profiles/signup', async (req, res) => {
     const { name, email, password, role, activePlanId } = req.body;
     const existing = await Profile.findOne({ where: { email } });
     if (existing) return res.status(409).json({ success: false, message: 'Email registered.' });
-
     const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
     const p = await Profile.create({ name, email, password: hash, role: role || 'member', activePlanId: activePlanId || 'plan_starter' });
     const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
@@ -189,64 +179,9 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/profiles/:id', auth, async (req, res) => {
-  try {
-    const p = await Profile.findByPk(req.params.id, { attributes: { exclude: ['password'] } });
-    res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/profiles', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
-  try {
-    const { role } = req.query;
-    const p = await Profile.findAll({ where: role ? { role } : {}, attributes: { exclude: ['password'] } });
-    res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.patch('/api/profiles/:id', auth, async (req, res) => {
-  try {
-    const p = await Profile.findByPk(req.params.id);
-    if (!p) return res.status(404).json({ success: false, message: 'Not found' });
-    await p.update(req.body);
-    res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/progress', auth, async (req, res) => {
-  try {
-    const { member_id } = req.query;
-    const data = await Progress.findAll({ where: { memberId: member_id }, order: [['date', 'DESC']] });
-    res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/progress', auth, async (req, res) => {
-  try {
-    const log = await Progress.create(req.body);
-    res.status(201).json({ success: true, data: log });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/leads', async (req, res) => {
-  try {
-    const l = await Lead.create(req.body);
-    res.status(201).json({ success: true, data: l });
-  } catch (e) { res.status(400).json({ success: false, message: e.message }); }
-});
-
 app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
-    res.json({ success: true, data: l });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.patch('/api/leads/:id', auth, async (req, res) => {
-  try {
-    const l = await Lead.findByPk(req.params.id);
-    if (!l) return res.status(404).json({ success: false, message: 'Not found' });
-    await l.update(req.body);
     res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
@@ -255,42 +190,6 @@ app.get('/api/plans', async (req, res) => {
   try {
     const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/finance', auth, checkRole(['super_admin']), async (req, res) => {
-  try {
-    const members = await Profile.findAll({ where: { role: 'member' } });
-    const records = members.map(m => ({
-      profile_id: m.id,
-      athlete_name: m.name,
-      email: m.email,
-      status: 'active',
-      next_billing: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      monthly_rate: m.activePlanId.includes('starter') ? 49 : m.activePlanId.includes('performance') ? 199 : 499
-    }));
-    res.json({ success: true, data: records });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/stripe/create-checkout', auth, async (req, res) => {
-  try {
-    const { planId } = req.body;
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: { name: planId.toUpperCase() + ' PROTOCOL' },
-          unit_amount: planId.includes('starter') ? 4900 : planId.includes('performance') ? 19900 : 49900,
-        },
-        quantity: 1,
-      }],
-      mode: 'payment',
-      success_url: `${process.env.FRONTEND_URL || 'https://fit-life-pro-one.vercel.app'}/?payment=success&plan=${planId}`,
-      cancel_url: `${process.env.FRONTEND_URL || 'https://fit-life-pro-one.vercel.app'}/?payment=cancel`,
-    });
-    res.json({ success: true, url: session.url });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
