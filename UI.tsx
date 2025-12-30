@@ -3,10 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, User, LogIn, ChevronRight, PlayCircle, Target, ShieldCheck, Zap, Star, CheckCircle, Check, ArrowRight, Crown, Loader2, MessageCircle, Instagram, Twitter, Facebook, ChevronUp, Shield, FileText, HelpCircle, Lock, Mail, UserPlus, Droplet, Award, MapPin } from 'lucide-react';
 
 // Fix imports to reference correct modules
-import { api } from './api';
-import * as assets from './assets';
-import { TRAINING_PLANS } from './constants';
-import { UserProfile, Lead, TrainingPlan } from './types';
+import { api } from './api.ts';
+import * as assets from './assets.ts';
+import { TRAINING_PLANS } from './constants.ts';
+import { UserProfile, Lead, TrainingPlan } from './types.ts';
 
 // --- SHARED UI HELPERS ---
 export const RevealOnScroll: React.FC<{children: React.ReactNode, delay?: number, variant?: string, className?: string}> = ({ children, delay = 0, variant = 'up', className = "" }) => {

@@ -3,10 +3,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Users, LogOut, RefreshCw, Activity, ShieldAlert, Plus, TrendingUp, Home, Database, Save, X, BrainCircuit, Award, Calendar, CreditCard, Mail, MapPin } from 'lucide-react';
 
 // Fix imports to reference correct modules
-import { api } from './api';
-import { UserProfile, MemberProgress, Lead, FinancialHealthRecord } from './types';
+import { api } from './api.ts';
+import { UserProfile, MemberProgress, Lead, FinancialHealthRecord } from './types.ts';
 // Fix: Renamed missing FitnessAnalysisEngine to FitnessChatSession
-import { FitnessChatSession } from './aiService';
+import { FitnessChatSession } from './aiService.ts';
 
 import { GoogleGenAI } from "@google/genai";
 
