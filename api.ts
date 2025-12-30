@@ -2,7 +2,13 @@
 import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord } from './types';
 import { TRAINING_PLANS } from './constants';
 
-const API_BASE = '/api';
+// Detect environment and set the appropriate base URL
+// Replace 'your-backend-url.com' with your actual hosted URL later
+const PROD_URL = 'https://your-backend-url.com/api'; 
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+  ? '/api' 
+  : '/api'; // Use relative paths for Vercel/Proxy setups
+
 const TOKEN_KEY = 'fitlife_vault_token';
 
 const fetchSafe = async (url: string, options: any = {}) => {
@@ -15,13 +21,20 @@ const fetchSafe = async (url: string, options: any = {}) => {
 
   try {
     const res = await fetch(url, { ...options, headers });
-    if (!res.ok) return { ok: false, json: () => Promise.resolve({ success: false, message: 'Server Error' }) };
     const text = await res.text();
+    
+    let json;
     try {
-      const json = text ? JSON.parse(text) : {};
-      return { ok: true, json: () => Promise.resolve(json) };
-    } catch (e) { return { ok: false, json: () => Promise.resolve({ success: false }) }; }
-  } catch (e) { return { ok: false, json: () => Promise.resolve({ success: false }) }; }
+      json = text ? JSON.parse(text) : {};
+    } catch (e) {
+      return { ok: res.ok, json: () => Promise.resolve({ success: false, message: 'Invalid JSON response' }) };
+    }
+
+    return { ok: res.ok, json: () => Promise.resolve(json) };
+  } catch (e) {
+    console.error(`[API CONNECTION ERROR] ${url}:`, e);
+    return { ok: false, json: () => Promise.resolve({ success: false, message: 'Network or Connectivity Error' }) };
+  }
 };
 
 export const api = {
@@ -62,20 +75,24 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : [];
   },
-  updateLeadStatus: async (id: string | number, status: Lead['status']) => {
-    const res = await fetchSafe(`${API_BASE}/leads/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
-    return res.ok;
+  // Added updateLeadStatus to resolve missing property error in AdminDashboard and Dashboards
+  updateLeadStatus: async (id: string | number, status: string) => {
+    const res = await fetchSafe(`${API_BASE}/leads/${id}`, { 
+      method: 'PATCH', 
+      body: JSON.stringify({ status }) 
+    });
+    const json = await res.json();
+    return json.success;
   },
   getUsersByRole: async (role: string, coachId?: string): Promise<UserProfile[]> => {
     const res = await fetchSafe(`${API_BASE}/profiles?role=${role}${coachId ? `&coach_id=${coachId}` : ''}`);
     const json = await res.json();
     return json.success ? json.data : [];
   },
+  // Added getFinancialHealth to resolve missing property error in AdminDashboard
   getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
     const res = await fetchSafe(`${API_BASE}/profiles/financial-health`);
     const json = await res.json();
-    // Fallback mock if endpoint missing in specific server versions
-    if (!res.ok) return [];
     return json.success ? json.data : [];
   },
   getMemberProgress: async (memberId: string): Promise<MemberProgress[]> => {

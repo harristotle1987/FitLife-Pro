@@ -2,7 +2,7 @@
 {
   "name": "fitlifepro-backend",
   "version": "1.0.0",
-  "description": "Consolidated Single-File Backend for FitLife Pro",
+  "description": "Consolidated Production Backend for FitLife Pro",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

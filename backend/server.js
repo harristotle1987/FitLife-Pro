@@ -6,8 +6,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// --- 1. DB CONNECTION ---
-// Password '@' is encoded as '%40'
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// --- 1. DATABASE CONNECTION ---
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
 
 const sequelize = new Sequelize(dbUrl, {
@@ -15,7 +18,8 @@ const sequelize = new Sequelize(dbUrl, {
   logging: false, 
   dialectOptions: {
     ssl: { require: true, rejectUnauthorized: false }
-  }
+  },
+  pool: { max: 10, min: 2, acquire: 30000, idle: 10000 }
 });
 
 // --- 2. MODELS ---
@@ -55,7 +59,7 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   description: DataTypes.TEXT
 });
 
-// --- 3. AUTH & STRIPE ---
+// --- 3. AUTH MIDDLEWARE ---
 const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y');
 
@@ -75,12 +79,23 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-// --- 4. APP SETUP ---
-const app = express();
-app.use(cors());
-app.use(express.json());
+// --- 4. ROUTES ---
 
-// Auth Routes
+// System Health & Bootstrap
+app.get('/api/health', (req, res) => res.json({ status: 'online', database: 'connected' }));
+
+app.get('/api/system/bootstrap', async (req, res) => {
+  try {
+    const hash = await bcrypt.hash('AdminPassword123!', 10);
+    const [admin, created] = await Profile.findOrCreate({
+      where: { email: 'admin@fitlife.pro' },
+      defaults: { name: 'Super Admin', password: hash, role: 'super_admin' }
+    });
+    res.json({ success: true, message: created ? 'Admin account created' : 'Admin already exists', email: 'admin@fitlife.pro' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// Auth
 app.post('/api/profiles/signup', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -106,17 +121,12 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   res.json({ success: true, data: p });
 });
 
-app.get('/api/profiles/:id', auth, async (req, res) => {
-  const p = await Profile.findByPk(req.params.id);
-  res.json({ success: true, data: p });
-});
-
 app.get('/api/profiles', auth, adminAuth, async (req, res) => {
   const p = await Profile.findAll({ where: { role: req.query.role || 'member' } });
   res.json({ success: true, data: p });
 });
 
-// Lead Routes
+// Leads
 app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
@@ -129,13 +139,7 @@ app.get('/api/leads/all', auth, adminAuth, async (req, res) => {
   res.json({ success: true, data: l });
 });
 
-app.patch('/api/leads/:id', auth, adminAuth, async (req, res) => {
-  const l = await Lead.findByPk(req.params.id);
-  if (l) { await l.update(req.body); res.json({ success: true }); }
-  else res.status(404).json({ success: false });
-});
-
-// Progress Routes
+// Progress
 app.get('/api/progress', auth, async (req, res) => {
   const logs = await Progress.findAll({ where: { member_id: req.query.member_id }, order: [['date', 'DESC']] });
   res.json({ success: true, data: logs });
@@ -148,7 +152,7 @@ app.post('/api/progress', auth, adminAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ success: false, message: e.message }); }
 });
 
-// Training Plans
+// Plans
 app.get('/api/plans', async (req, res) => {
   const p = await TrainingPlan.findAll();
   res.json({ success: true, data: p });
@@ -180,23 +184,12 @@ app.post('/api/stripe/create-checkout', auth, async (req, res) => {
 const start = async () => {
   try {
     await sequelize.authenticate();
-    console.log('✅ ENGINE: Online (Supabase)');
+    console.log('✅ VAULT: Connected to Supabase');
+    await sequelize.sync({ alter: false });
     
-    // FRESH START: Wipe and Recreate Tables
-    await sequelize.sync({ force: true });
-    console.log('✅ SCHEMA: Rebuilt (Fresh Start)');
-
-    // Seed Plans
-    await TrainingPlan.bulkCreate([
-      { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational digital guidance.' },
-      { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'High-intensity transformation.' },
-      { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Bespoke human optimization.' },
-      { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'The ultimate bespoke experience.' }
-    ]);
-    console.log('✅ PROTOCOLS: Initialized');
-
-    app.listen(5000, '0.0.0.0', () => {
-      console.log('🚀 VAULT ACTIVE: Port 5000');
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 SYSTEM ACTIVE ON PORT ${PORT}`);
     });
   } catch (e) { console.error('❌ SYSTEM ERROR:', e); }
 };
