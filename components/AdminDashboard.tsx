@@ -319,6 +319,11 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                   <UserPlus className="w-4 h-4" /> Add Athlete
                 </button>
              )}
+             {activeTab === 'protocols' && (
+                <button onClick={() => setEditingPlan({ features: [] })} className="bg-fuchsia-600 px-8 py-4 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl shadow-fuchsia-600/20">
+                  <PlusCircle className="w-4 h-4" /> Create Protocol
+                </button>
+             )}
              <button onClick={loadAll} className="p-5 bg-zinc-900 border border-white/5 rounded-full hover:border-fuchsia-500 transition-all">
                 <RefreshCw className={`w-5 h-5 text-fuchsia-500 ${loading ? 'animate-spin' : ''}`} />
              </button>
