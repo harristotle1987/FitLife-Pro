@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Lead } from '../types';
-import { CheckCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { CheckCircle, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../api';
 
 // EmailJS Global Reference
@@ -25,6 +26,7 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
   const [errors, setErrors] = useState<Partial<Record<keyof Lead, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [apiErrorMessage, setApiErrorMessage] = useState('');
   const [highlightGoal, setHighlightGoal] = useState(false);
   const goalInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -69,34 +71,41 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
     e.preventDefault();
     if (!validate()) return;
     setIsSubmitting(true);
+    setApiErrorMessage('');
 
     try {
-      // 1. Save to Supabase
+      // 1. Save to Database via API
       const dbResult = await api.submitLead(formData);
       
       if (dbResult.success) {
         // 2. Trigger EmailJS Notification
         if (typeof emailjs !== 'undefined') {
-          await emailjs.send(
-            EMAILJS_SERVICE_ID,
-            EMAILJS_TEMPLATE_ID,
-            {
-              name: formData.name,      // {{name}}
-              title: "NEW STRATEGY LEAD", // {{title}}
-              message: formData.goal,   // {{message}}
-              email: formData.email,    // {{email}}
-              phone: formData.phone,    // {{phone}}
-              time: new Date().toLocaleString() // {{time}}
-            }
-          );
+          try {
+            await emailjs.send(
+              EMAILJS_SERVICE_ID,
+              EMAILJS_TEMPLATE_ID,
+              {
+                name: formData.name,
+                title: "NEW STRATEGY LEAD",
+                message: formData.goal,
+                email: formData.email,
+                phone: formData.phone,
+                time: new Date().toLocaleString()
+              }
+            );
+          } catch (e) {
+            console.warn("EmailJS failed, but DB succeeded:", e);
+          }
         }
         setSubmitStatus('success');
         if (onSuccess) onSuccess();
       } else {
         setSubmitStatus('error');
+        setApiErrorMessage(dbResult.message || 'System was unable to process your request.');
       }
-    } catch (err) {
+    } catch (err: any) {
       setSubmitStatus('error');
+      setApiErrorMessage(err.message || 'Connectivity failure detected.');
     } finally {
       setIsSubmitting(false);
     }
@@ -171,6 +180,16 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
         />
         {errors.goal && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-bold">{errors.goal}</p>}
       </div>
+      
+      {submitStatus === 'error' && (
+        <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500">
+           <AlertCircle className="w-5 h-5 flex-shrink-0" />
+           <p className="text-[10px] font-black uppercase tracking-widest leading-tight">
+             {apiErrorMessage}
+           </p>
+        </div>
+      )}
+
       <button
         type="submit"
         disabled={isSubmitting}
@@ -183,7 +202,6 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
           </>
         )}
       </button>
-      {submitStatus === 'error' && <p className="text-center text-red-500 text-xs font-bold uppercase mt-2">Error connecting to servers.</p>}
     </form>
   );
 };

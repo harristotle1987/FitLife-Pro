@@ -21,13 +21,31 @@ const fetchSafe = async (url: string, options: any = {}) => {
     try {
       json = text ? JSON.parse(text) : {};
     } catch (e) {
-      return { ok: res.ok, json: () => Promise.resolve({ success: false, message: 'Invalid JSON response' }) };
+      return { 
+        ok: false, 
+        json: () => Promise.resolve({ 
+          success: false, 
+          message: `Server returned non-JSON response (Status ${res.status}). Ensure backend is running.` 
+        }) 
+      };
+    }
+
+    // If the server returned an error status but valid JSON, ensure success: false is present
+    if (!res.ok && json.success !== false) {
+      json.success = false;
+      json.message = json.message || `Request failed with status ${res.status}`;
     }
 
     return { ok: res.ok, json: () => Promise.resolve(json) };
   } catch (e) {
     console.error(`[VAULT CONNECTION ERROR] @ ${url}:`, e);
-    return { ok: false, json: () => Promise.resolve({ success: false, message: 'Network or Connectivity Error' }) };
+    return { 
+      ok: false, 
+      json: () => Promise.resolve({ 
+        success: false, 
+        message: 'Network error: Connection to backend failed. Is your server running on port 5000?' 
+      }) 
+    };
   }
 };
 

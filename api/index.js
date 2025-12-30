@@ -12,22 +12,36 @@ dotenv.config();
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y';
+
+// DB URL - Using provided encoded string
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
 
 const stripe = new Stripe(STRIPE_SECRET);
+
+// Optimized Sequelize for Serverless (Vercel)
+// We use a pool of 1 to prevent exhausting database connections across many lambda instances
 const sequelize = new Sequelize(dbUrl, {
   dialect: 'postgres',
   logging: false, 
-  dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
-  pool: { max: 10, min: 2, acquire: 30000, idle: 10000 }
+  dialectOptions: { 
+    ssl: { require: true, rejectUnauthorized: false },
+    connectTimeout: 10000 // 10s timeout for initial connection
+  },
+  pool: { 
+    max: 1, 
+    min: 0, 
+    acquire: 15000, 
+    idle: 5000,
+    evict: 5000 
+  }
 });
 
 // --- MODELS ---
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
-  phone: DataTypes.STRING,
-  goal: DataTypes.TEXT,
+  phone: { type: DataTypes.STRING, allowNull: false },
+  goal: { type: DataTypes.TEXT },
   source: { type: DataTypes.STRING, defaultValue: 'Contact_Form' },
   status: { type: DataTypes.STRING, defaultValue: 'New' }
 }, { tableName: 'Leads' });
@@ -92,22 +106,56 @@ const checkRole = (roles) => (req, res, next) => {
 
 // --- ROUTES ---
 
-app.get('/api/system/bootstrap', async (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
-    await sequelize.sync({ alter: true });
+    await sequelize.authenticate();
+    res.json({ status: 'online', database: 'connected' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+});
+
+app.get('/api/system/bootstrap', async (req, res) => {
+  console.info('[BOOTSTRAP] Starting database initialization...');
+  try {
+    // 1. Connection Check
+    await sequelize.authenticate();
+    console.info('[BOOTSTRAP] Connection authenticated successfully.');
+
+    // 2. Sync Tables (Standard sync is faster than alter:true for serverless)
+    await sequelize.sync();
+    console.info('[BOOTSTRAP] Tables synchronized.');
+    
+    // 3. Seed Essential Data
     const hash = await bcrypt.hash('AdminPassword123!', 10);
-    await Profile.findOrCreate({ where: { email: 'admin@fitlife.pro' }, defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } });
-    await Profile.findOrCreate({ where: { email: 'nutrition@fitlife.pro' }, defaults: { name: 'Elena Nutritionist', password: hash, role: 'nutritionist' } });
-    res.json({ success: true, message: 'Database Synced.' });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    const [adminUser] = await Profile.findOrCreate({ 
+      where: { email: 'admin@fitlife.pro' }, 
+      defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
+    });
+    
+    await Profile.findOrCreate({ 
+      where: { email: 'nutrition@fitlife.pro' }, 
+      defaults: { name: 'Elena Nutritionist', password: hash, role: 'nutritionist' } 
+    });
+    
+    console.info('[BOOTSTRAP] Default accounts verified.');
+    res.json({ success: true, message: 'System initialized successfully.' });
+  } catch (e) { 
+    console.error("[BOOTSTRAP ERROR] Fatal failure:", e.message);
+    res.status(500).json({ success: false, error: e.message, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined }); 
+  }
 });
 
 app.post('/api/profiles/login', async (req, res) => {
-  const p = await Profile.findOne({ where: { email: req.body.email } });
-  if (p && await bcrypt.compare(req.body.password, p.password)) {
-    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-    res.json({ success: true, data: p, token });
-  } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
+  try {
+    const p = await Profile.findOne({ where: { email: req.body.email } });
+    if (p && await bcrypt.compare(req.body.password, p.password)) {
+      const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+      res.json({ success: true, data: p, token });
+    } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.get('/api/profiles/me', auth, async (req, res) => {
@@ -115,7 +163,6 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   res.json({ success: true, data: p });
 });
 
-// New Endpoint for Staff to update Member Profiles (Nutrition, Assigned Coach, etc)
 app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin', 'nutritionist']), async (req, res) => {
   try {
     const p = await Profile.findByPk(req.params.id);
@@ -129,17 +176,28 @@ app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
     res.status(201).json({ success: true, data: l });
-  } catch (e) { res.status(400).json({ success: false, message: e.message }); }
+  } catch (e) { 
+    console.error("Lead creation error:", e.message);
+    res.status(400).json({ success: false, message: e.message }); 
+  }
 });
 
 app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
-  const l = await Lead.findAll({ order: [['createdAt', 'DESC']] });
-  res.json({ success: true, data: l });
+  try {
+    const l = await Lead.findAll({ order: [['createdAt', 'DESC']] });
+    res.json({ success: true, data: l });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.post('/api/progress', auth, checkRole(['super_admin', 'admin', 'nutritionist']), async (req, res) => {
-  const log = await Progress.create({ ...req.body, coach_id: req.user.id });
-  res.status(201).json({ success: true, data: log });
+  try {
+    const log = await Progress.create({ ...req.body, coach_id: req.user.id });
+    res.status(201).json({ success: true, data: log });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.get('/api/progress', auth, async (req, res) => {
@@ -157,7 +215,6 @@ app.get('/api/testimonials/featured', async (req, res) => {
   res.json({ success: true, data: t });
 });
 
-// Unified Stripe Session Creation
 app.post('/api/stripe/create-checkout', auth, async (req, res) => {
   try {
     const { planId } = req.body;
