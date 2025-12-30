@@ -2,13 +2,7 @@
 import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord } from './types';
 import { TRAINING_PLANS } from './constants';
 
-// Detect environment and set the appropriate base URL
-// Replace 'your-backend-url.com' with your actual hosted URL later
-const PROD_URL = 'https://your-backend-url.com/api'; 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-  ? '/api' 
-  : '/api'; // Use relative paths for Vercel/Proxy setups
-
+const API_BASE = '/api';
 const TOKEN_KEY = 'fitlife_vault_token';
 
 const fetchSafe = async (url: string, options: any = {}) => {
@@ -32,7 +26,7 @@ const fetchSafe = async (url: string, options: any = {}) => {
 
     return { ok: res.ok, json: () => Promise.resolve(json) };
   } catch (e) {
-    console.error(`[API CONNECTION ERROR] ${url}:`, e);
+    console.error(`[VAULT CONNECTION ERROR] @ ${url}:`, e);
     return { ok: false, json: () => Promise.resolve({ success: false, message: 'Network or Connectivity Error' }) };
   }
 };
@@ -75,7 +69,6 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : [];
   },
-  // Added updateLeadStatus to resolve missing property error in AdminDashboard and Dashboards
   updateLeadStatus: async (id: string | number, status: string) => {
     const res = await fetchSafe(`${API_BASE}/leads/${id}`, { 
       method: 'PATCH', 
@@ -89,7 +82,6 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : [];
   },
-  // Added getFinancialHealth to resolve missing property error in AdminDashboard
   getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
     const res = await fetchSafe(`${API_BASE}/profiles/financial-health`);
     const json = await res.json();

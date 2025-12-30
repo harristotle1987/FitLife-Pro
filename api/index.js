@@ -8,40 +8,18 @@ require('dotenv').config();
 
 const app = express();
 
-// --- 1. CORS CONFIGURATION ---
-// In production, you should set this to your specific frontend URL
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  process.env.FRONTEND_URL // Add your Vercel/Netlify URL here
-].filter(Boolean);
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
-
-app.use(express.json());
-
-// --- 2. DATABASE CONNECTION (SUPABASE) ---
+// --- 1. CONFIG & DB ---
+const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y');
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
 
 const sequelize = new Sequelize(dbUrl, {
   dialect: 'postgres',
   logging: false, 
-  dialectOptions: {
-    ssl: { require: true, rejectUnauthorized: false }
-  },
-  pool: { max: 10, min: 2, acquire: 30000, idle: 10000 }
+  dialectOptions: { ssl: { require: true, rejectUnauthorized: false } }
 });
 
-// --- 3. MODELS ---
+// --- 2. MODELS ---
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -71,16 +49,9 @@ const Progress = sequelize.define('Progress', {
   date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 });
 
-const TrainingPlan = sequelize.define('TrainingPlan', {
-  id: { type: DataTypes.STRING, primaryKey: true },
-  name: { type: DataTypes.STRING, allowNull: false },
-  price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-  description: DataTypes.TEXT
-});
-
-// --- 4. AUTH & STRIPE ---
-const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y');
+// --- 3. MIDDLEWARE ---
+app.use(cors());
+app.use(express.json());
 
 const auth = (req, res, next) => {
   const h = req.headers.authorization;
@@ -98,23 +69,24 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-// --- 5. ROUTES ---
+// --- 4. ROUTES ---
 
-// Health & First-Time Setup
-app.get('/api/health', (req, res) => res.json({ status: 'online', database: 'connected', version: '1.0.0' }));
+// System Check & Admin Bootstrap
+app.get('/api/health', (req, res) => res.json({ status: 'active', node: process.version }));
 
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
+    await sequelize.sync();
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     const [admin, created] = await Profile.findOrCreate({
       where: { email: 'admin@fitlife.pro' },
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' }
     });
-    res.json({ success: true, message: created ? 'Admin account created' : 'Admin already exists', email: 'admin@fitlife.pro' });
+    res.json({ success: true, message: created ? 'Admin created' : 'Admin exists', email: 'admin@fitlife.pro' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// Auth Endpoints
+// Auth
 app.post('/api/profiles/signup', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -140,15 +112,13 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   res.json({ success: true, data: p });
 });
 
+// Financials (Super Admin Only)
 app.get('/api/profiles/financial-health', auth, adminAuth, async (req, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ success: false });
   const members = await Profile.findAll({ where: { role: 'member' } });
   const records = members.map(m => ({
-    profile_id: m.id,
-    athlete_name: m.name,
-    email: m.email,
-    status: 'active',
-    next_billing: new Date().toISOString(),
-    monthly_rate: 199
+    profile_id: m.id, athlete_name: m.name, email: m.email,
+    status: 'active', next_billing: new Date().toISOString(), monthly_rate: 199
   }));
   res.json({ success: true, data: records });
 });
@@ -158,7 +128,7 @@ app.get('/api/profiles', auth, adminAuth, async (req, res) => {
   res.json({ success: true, data: p });
 });
 
-// Lead Management
+// Leads
 app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
@@ -177,7 +147,7 @@ app.patch('/api/leads/:id', auth, adminAuth, async (req, res) => {
   else res.status(404).json({ success: false });
 });
 
-// Biological Progress
+// Progress
 app.get('/api/progress', auth, async (req, res) => {
   const logs = await Progress.findAll({ where: { member_id: req.query.member_id }, order: [['date', 'DESC']] });
   res.json({ success: true, data: logs });
@@ -190,13 +160,12 @@ app.post('/api/progress', auth, adminAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ success: false, message: e.message }); }
 });
 
-// Content
+// Plans
 app.get('/api/plans', async (req, res) => {
-  const p = await TrainingPlan.findAll();
-  res.json({ success: true, data: p });
+  res.json({ success: true, data: [] }); // Use client-side fallback constants if empty
 });
 
-// Payments
+// Stripe Checkout
 app.post('/api/stripe/create-checkout', auth, async (req, res) => {
   try {
     const { planId } = req.body;
@@ -211,26 +180,12 @@ app.post('/api/stripe/create-checkout', auth, async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/?payment=success`,
-      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/?payment=cancel`,
+      success_url: `${req.headers.origin}/?payment=success`,
+      cancel_url: `${req.headers.origin}/?payment=cancel`,
     });
     res.json({ success: true, url: session.url });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// --- 6. START ENGINE ---
-const start = async () => {
-  try {
-    await sequelize.authenticate();
-    console.log('✅ VAULT: Database Connected');
-    
-    // Sync without altering tables since they were created manually in SQL
-    await sequelize.sync({ alter: false });
-
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 COACHING ENGINE ONLINE ON PORT ${PORT}`);
-    });
-  } catch (e) { console.error('❌ SYSTEM STARTUP FAILURE:', e); }
-};
-start();
+// Export the app for Vercel
+module.exports = app;
