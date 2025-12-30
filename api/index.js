@@ -10,8 +10,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// NUCLEAR OPTION: Force Node.js to ignore self-signed certificate errors
-// This is often required for Supabase Supavisor poolers in serverless environments.
+// SUPABASE FIX: Ignore self-signed certs (Supavisor pooler requirement)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
@@ -20,50 +19,33 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 
 const stripe = new Stripe(STRIPE_SECRET);
 
-// --- DATABASE CONFIGURATION ---
+// --- DB CONFIG ---
 const DB_PASSWORD = "Colony082987Fit";
 const DEFAULT_REF = "euuqfcglulkeyxaqcpvz";
 
-/**
- * CLEAN CONNECTION STRING BUILDER
- */
 function getConnectionString() {
   let url = process.env.DATABASE_URL;
-  
   if (url) {
-    // Strip everything after '?' to remove forced sslmode=verify-full
     const cleanUrl = url.split('?')[0];
-    console.log("[DB] Hard-cleaning DATABASE_URL params.");
     return `${cleanUrl}?sslmode=require`;
   }
-  
   const user = `postgres.${DEFAULT_REF}`;
   const host = `aws-1-eu-west-1.pooler.supabase.com`;
-  const port = 6543;
-  return `postgresql://${user}:${DB_PASSWORD}@${host}:${port}/postgres?sslmode=require`;
+  return `postgresql://${user}:${DB_PASSWORD}@${host}:6543/postgres?sslmode=require`;
 }
 
-// Global pg configuration
 pg.defaults.ssl = true;
 
 const sequelize = new Sequelize(getConnectionString(), {
   dialect: 'postgres',
   dialectModule: pg,
-  logging: false,
+  logging: console.log, // Enabled for debugging schema issues
   dialectOptions: {
-    ssl: {
-      require: true,
-      rejectUnauthorized: false // Bypasses certificate chain validation
-    },
+    ssl: { require: true, rejectUnauthorized: false },
     keepAlive: true,
     connectTimeout: 60000
   },
-  pool: {
-    max: 5,
-    min: 1,
-    acquire: 60000,
-    idle: 10000
-  }
+  pool: { max: 5, min: 1, acquire: 60000, idle: 10000 }
 });
 
 // --- MODELS ---
@@ -84,10 +66,7 @@ const Profile = sequelize.define('Profile', {
   role: { type: DataTypes.STRING, defaultValue: 'member' },
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
-  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
-  quote: { type: DataTypes.TEXT },
-  clientTitle: { type: DataTypes.STRING },
-  rating: { type: DataTypes.INTEGER, defaultValue: 5 }
+  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' }
 }, { tableName: 'profiles', underscored: true, timestamps: true });
 
 const TrainingPlan = sequelize.define('TrainingPlan', {
@@ -115,61 +94,64 @@ const auth = (req, res, next) => {
 
 app.get('/api/system/health', async (req, res) => {
   try {
-    // Test the actual connection
     await sequelize.query('SELECT 1+1 AS result');
-    res.json({ 
-      success: true, 
-      status: 'operational', 
-      host: sequelize.config.host
-    });
+    res.json({ success: true, status: 'operational', host: sequelize.config.host });
   } catch (e) {
-    res.status(503).json({ 
-      success: false, 
-      status: 'degraded', 
-      error: e.message,
-      help: "The global TLS bypass is active. If this fails, ensure DATABASE_URL doesn't have restrictive query params."
-    });
+    res.status(503).json({ success: false, status: 'degraded', error: e.message });
   }
 });
 
+/**
+ * REPAIR & BOOTSTRAP
+ */
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
+    console.log("[BOOTSTRAP] Commencing schema sanitization...");
+
+    // Manual backfill of NULLs to avoid NOT NULL constraint errors
+    await sequelize.query(`
+      DO $$ 
+      DECLARE
+        t text;
+      BEGIN 
+        FOR t IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('plans', 'leads', 'profiles')
+        LOOP
+          EXECUTE 'UPDATE ' || t || ' SET created_at = NOW() WHERE created_at IS NULL';
+          EXECUTE 'UPDATE ' || t || ' SET updated_at = NOW() WHERE updated_at IS NULL';
+        END LOOP;
+      END $$;
+    `);
+
+    // Sync with Alter
     await sequelize.sync({ alter: true });
-    const hash = await bcrypt.hash('AdminPassword123!', 10);
     
+    // Seed Admin
+    const hash = await bcrypt.hash('AdminPassword123!', 10);
     await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
 
+    // Seed Plans
     if (await TrainingPlan.count() === 0) {
       await TrainingPlan.bulkCreate([
         { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
         { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'Rapid transformation.', features: ['Custom Programming', 'Direct Messaging'] },
-        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] }
+        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] },
+        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'VIP experience.', features: ['1-on-1 Coaching', 'Personal Chef Meal Planning'] }
       ]);
     }
 
-    if (await Profile.count({ where: { role: 'testimonial' } }) === 0) {
-      await Profile.bulkCreate([
-        { name: 'Sarah Jenkins', email: 'sarah@exec.com', password: 'N/A', role: 'testimonial', clientTitle: 'Executive Director', quote: "The Elite Executive plan didn't just change my body; it changed my clarity at work.", rating: 5 },
-        { name: 'Marcus V.', email: 'marcus@founder.com', password: 'N/A', role: 'testimonial', clientTitle: 'Tech Founder', quote: "Pinnacle coaching is the only way to train.", rating: 5 }
-      ]);
-    }
-
-    res.json({ success: true, message: 'Infrastructure Ready.' });
+    res.json({ success: true, message: 'Vault initialized and repaired.' });
   } catch (e) { 
+    console.error("[BOOTSTRAP ERROR]", e);
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
 
 app.get('/api/profiles', async (req, res) => {
   try {
-    const { role } = req.query;
-    const profiles = await Profile.findAll({ 
-      where: role ? { role } : {},
-      attributes: { exclude: ['password'] }
-    });
+    const profiles = await Profile.findAll({ attributes: { exclude: ['password'] } });
     res.json({ success: true, data: profiles });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
@@ -183,13 +165,6 @@ app.post('/api/profiles/login', async (req, res) => {
     } else {
       res.status(401).json({ success: false, message: 'Invalid Credentials' });
     }
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/leads/all', auth, async (req, res) => {
-  try {
-    const l = await Lead.findAll({ order: [['createdAt', 'DESC']] });
-    res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
