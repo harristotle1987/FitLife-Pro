@@ -88,14 +88,18 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   ...timestampConfig
 }, { tableName: 'plans', underscored: true, timestamps: true });
 
-const Testimonial = sequelize.define('Testimonial', {
-  client_name: { type: DataTypes.STRING, allowNull: false },
-  client_title: { type: DataTypes.STRING },
-  quote: { type: DataTypes.TEXT, allowNull: false },
-  rating: { type: DataTypes.INTEGER, defaultValue: 5 },
-  is_featured: { type: DataTypes.BOOLEAN, defaultValue: true },
+const MemberProgress = sequelize.define('MemberProgress', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  member_id: { type: DataTypes.UUID, allowNull: false },
+  date: { type: DataTypes.DATE, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  weight: { type: DataTypes.DECIMAL(10, 2) },
+  body_fat: { type: DataTypes.DECIMAL(10, 2) },
+  performance_score: { type: DataTypes.INTEGER },
+  notes: { type: DataTypes.TEXT },
+  coach_id: { type: DataTypes.UUID },
+  coach_name: { type: DataTypes.STRING },
   ...timestampConfig
-}, { tableName: 'testimonials', underscored: true, timestamps: true });
+}, { tableName: 'member_progress', underscored: true, timestamps: true });
 
 app.use(cors());
 app.use(express.json());
@@ -134,22 +138,6 @@ app.get('/api/system/health', async (req, res) => {
 
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    const columns = [
-      ['phone', 'TEXT'],
-      ['avatar_url', 'TEXT'],
-      ['bio', 'TEXT'],
-      ['assigned_coach_id', 'TEXT'],
-      ['assigned_coach_name', 'TEXT'],
-      ['assigned_nutritionist_name', 'TEXT'],
-      ['nutritional_protocol', 'TEXT'],
-      ['role', 'TEXT'],
-      ['permissions', 'JSONB']
-    ];
-
-    for (const [col, type] of columns) {
-      await sequelize.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ${col} ${type}`).catch(() => {});
-    }
-
     await sequelize.sync({ alter: true });
     
     const hash = await bcrypt.hash('AdminPassword123!', 10);
@@ -158,7 +146,7 @@ app.get('/api/system/bootstrap', async (req, res) => {
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
 
-    res.json({ success: true, message: 'Vault Core Infrastructure Synchronized with Supabase.' });
+    res.json({ success: true, message: 'Vault Core Infrastructure Synchronized.' });
   } catch (e) { 
     res.status(500).json({ success: false, error: e.message }); 
   }
@@ -203,13 +191,10 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    
-    // Prevent password updates via this route for security
     delete updates.password;
     delete updates.id;
 
     const [updatedRows] = await Profile.update(updates, { where: { id } });
-    
     if (updatedRows > 0) {
       const p = await Profile.findByPk(id, { attributes: { exclude: ['password'] } });
       res.json({ success: true, data: p });
@@ -224,15 +209,119 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
 app.delete('/api/profiles/:id', adminAuth, async (req, res) => {
   try {
     if (req.user.role !== 'super_admin') {
-       return res.status(403).json({ success: false, message: 'Only Super Admin can terminate profiles.' });
+       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
     const { id } = req.params;
     const deleted = await Profile.destroy({ where: { id } });
-    if (deleted) {
-      res.json({ success: true, message: 'Profile terminated from Vault.' });
-    } else {
-      res.status(404).json({ success: false, message: 'Profile not found.' });
+    res.json({ success: !!deleted });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// Added missing public endpoint for lead capture
+app.post('/api/leads', async (req, res) => {
+  try {
+    const { name, email, phone, goal, source } = req.body;
+    if (!name || !email || !phone) {
+      return res.status(400).json({ success: false, message: 'Name, email, and phone are required.' });
     }
+    const newLead = await Lead.create({ name, email, phone, goal, source });
+    res.status(201).json({ success: true, data: newLead });
+  } catch (error) {
+    console.error('Error creating lead:', error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ success: false, message: 'This email has already requested a pass.' });
+    }
+    res.status(500).json({ success: false, message: 'Server error processing your request.' });
+  }
+});
+
+app.get('/api/leads/all', adminAuth, async (req, res) => {
+  try {
+    const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
+    res.json({ success: true, data: l });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/leads/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Lead.update(req.body, { where: { id } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.get('/api/plans', async (req, res) => {
+  try {
+    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/plans', adminAuth, async (req, res) => {
+  try {
+    const p = await TrainingPlan.create(req.body);
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/plans/:id', adminAuth, async (req, res) => {
+  try {
+    await TrainingPlan.update(req.body, { where: { id: req.params.id } });
+    const p = await TrainingPlan.findByPk(req.params.id);
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.delete('/api/plans/:id', adminAuth, async (req, res) => {
+  try {
+    const deleted = await TrainingPlan.destroy({ where: { id: req.params.id } });
+    res.json({ success: !!deleted });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// Added missing checkout session endpoint
+app.post('/api/checkout', async (req, res) => {
+  try {
+    const { planId, email } = req.body;
+    const plan = await TrainingPlan.findByPk(planId);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: plan.name, description: plan.description },
+          unit_amount: Math.round(plan.price * 100),
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${req.headers.origin}/?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/?canceled=true`,
+      customer_email: email || undefined,
+    });
+    res.json({ success: true, url: session.url });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.get('/api/progress', adminAuth, async (req, res) => {
+  try {
+    const { member_id } = req.query;
+    const p = await MemberProgress.findAll({ 
+      where: member_id ? { member_id } : {},
+      order: [['date', 'DESC']]
+    });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/progress', adminAuth, async (req, res) => {
+  try {
+    const p = await MemberProgress.create({ ...req.body, coach_id: req.user.id });
+    res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
@@ -251,27 +340,6 @@ app.post('/api/profiles/login', async (req, res) => {
 app.get('/api/profiles/me', auth, async (req, res) => {
   try {
     const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
-    res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/leads', async (req, res) => {
-  try {
-    const l = await Lead.create(req.body);
-    res.json({ success: true, data: l });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/leads/all', adminAuth, async (req, res) => {
-  try {
-    const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
-    res.json({ success: true, data: l });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/plans', async (req, res) => {
-  try {
-    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });

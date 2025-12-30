@@ -85,22 +85,24 @@ export const api = {
   getPlans: async (): Promise<TrainingPlan[]> => {
     const res = await fetchSafe(`${API_BASE}/plans`);
     const json = await res.json();
-    return (json.success && json.data?.length) ? json.data : TRAINING_PLANS;
+    return json.success ? json.data : TRAINING_PLANS;
+  },
+  createPlan: async (plan: Partial<TrainingPlan>): Promise<{success: boolean, data?: TrainingPlan}> => {
+    const res = await fetchSafe(`${API_BASE}/plans`, { method: 'POST', body: JSON.stringify(plan) });
+    return res.json();
+  },
+  updatePlan: async (id: string, plan: Partial<TrainingPlan>): Promise<{success: boolean, data?: TrainingPlan}> => {
+    const res = await fetchSafe(`${API_BASE}/plans/${id}`, { method: 'PATCH', body: JSON.stringify(plan) });
+    return res.json();
+  },
+  deletePlan: async (id: string): Promise<{success: boolean}> => {
+    const res = await fetchSafe(`${API_BASE}/plans/${id}`, { method: 'DELETE' });
+    return res.json();
   },
   getTestimonials: async (): Promise<Testimonial[]> => {
     const res = await fetchSafe(`${API_BASE}/testimonials`);
     const json = await res.json();
-    if (json.success && json.data?.length) {
-      return json.data.map((t: any) => ({
-        id: t.id,
-        clientName: t.client_name,
-        clientTitle: t.client_title,
-        quote: t.quote,
-        rating: t.rating,
-        isFeatured: t.is_featured
-      }));
-    }
-    return TESTIMONIALS;
+    return (json.success && json.data?.length) ? json.data : TESTIMONIALS;
   },
   submitLead: async (formData: Lead) => {
     const res = await fetchSafe(`${API_BASE}/leads`, { method: 'POST', body: JSON.stringify(formData) });
@@ -131,22 +133,15 @@ export const api = {
   },
   addProgressLog: async (logData: Partial<MemberProgress>) => {
     const res = await fetchSafe(`${API_BASE}/progress`, { method: 'POST', body: JSON.stringify(logData) });
-    return res.ok;
+    return res.json();
   },
   createProfile: async (data: any) => {
     const res = await fetchSafe(`${API_BASE}/profiles/manual`, { method: 'POST', body: JSON.stringify(data) });
     return res.json();
   },
-  getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
-    const res = await fetchSafe(`${API_BASE}/finance`);
-    const json = await res.json();
-    return json.success ? json.data : [];
-  },
-  createCheckoutSession: async (planId: string, customerEmail: string): Promise<string | null> => {
-    const res = await fetchSafe(`${API_BASE}/checkout/create-session`, {
-      method: 'POST',
-      body: JSON.stringify({ planId, customerEmail })
-    });
+  // Added missing createCheckoutSession method
+  createCheckoutSession: async (planId: string, email: string): Promise<string | null> => {
+    const res = await fetchSafe(`${API_BASE}/checkout`, { method: 'POST', body: JSON.stringify({ planId, email }) });
     const json = await res.json();
     return json.success ? json.url : null;
   },
