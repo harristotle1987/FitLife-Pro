@@ -3,7 +3,7 @@ import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord 
 import { TRAINING_PLANS } from './constants';
 
 const API_BASE = '/api';
-const TOKEN_KEY = 'fitlife_vault_token';
+const TOKEN_KEY = 'fitlife_vault_key_2024';
 
 const fetchSafe = async (url: string, options: any = {}) => {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -15,28 +15,21 @@ const fetchSafe = async (url: string, options: any = {}) => {
 
   try {
     const res = await fetch(url, { ...options, headers });
-    
-    if (res.status === 503) {
-      const errJson = await res.json();
-      return { 
-        ok: false, 
-        json: () => Promise.resolve({ 
-          success: false, 
-          message: `DNS Resolution failed for host ${errJson.diagnostic?.attempted_host || ''}. ${errJson.hint || ''}` 
-        }) 
-      };
-    }
-
     const text = await res.text();
     let json;
     try {
       json = text ? JSON.parse(text) : {};
     } catch (e) {
+      json = { success: false, message: "Response parsing failed." };
+    }
+
+    // 503 is typical for Vercel timeouts when DB is down
+    if (res.status === 503) {
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `Server Error (${res.status}). The connection to the database might be unstable.` 
+          message: `Infrastructure Degraded: ${json.error || 'Connection Timeout'}. Hint: Ensure you are using Port 6543 for Supabase.` 
         }) 
       };
     }
@@ -52,7 +45,7 @@ const fetchSafe = async (url: string, options: any = {}) => {
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: `Network failure: Cannot reach server. Ensure the Vercel project is deployed correctly.` 
+        message: `Network failure: ${e.message}. Ensure your database is accessible via Port 6543.` 
       }) 
     };
   }
@@ -127,8 +120,11 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : [];
   },
-  createCheckoutSession: async (planId: string, email: string): Promise<string | null> => {
-    const res = await fetchSafe(`${API_BASE}/stripe/create-checkout`, { method: 'POST', body: JSON.stringify({ planId, email }) });
+  createCheckoutSession: async (planId: string, customerEmail: string): Promise<string | null> => {
+    const res = await fetchSafe(`${API_BASE}/checkout/create-session`, {
+      method: 'POST',
+      body: JSON.stringify({ planId, customerEmail })
+    });
     const json = await res.json();
     return json.success ? json.url : null;
   },

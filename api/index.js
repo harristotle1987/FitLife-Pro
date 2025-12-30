@@ -7,7 +7,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
-import dns from 'dns';
 
 dotenv.config();
 
@@ -21,18 +20,21 @@ const stripe = new Stripe(STRIPE_SECRET);
 const DB_PASSWORD = "Colony082987Fit";
 const FALLBACK_REF = "euuqfcglulkeyxaqcpvz";
 
+/**
+ * RESOLVES ENOTFOUND DNS ERRORS
+ * This function builds a connection string compatible with Supavisor (Port 6543).
+ * It prioritizes environment variables provided by Vercel/Supabase integrations.
+ */
 function getSanitizedConnectionString() {
-  const envUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
-  let ref = FALLBACK_REF;
-  
-  if (envUrl.includes('.supabase.')) {
-    const match = envUrl.match(/db\.([^.]+)\.supabase/) || envUrl.match(/https:\/\/([^.]+)\.supabase/);
-    if (match && match[1]) ref = match[1];
-  }
+  // If Vercel/Supabase integration is used, this is provided automatically
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (process.env.POSTGRES_URL) return process.env.POSTGRES_URL;
 
-  // Mandatory Supavisor format for Vercel/Serverless reliability
+  // Fallback logic for manual configuration
+  let ref = FALLBACK_REF;
   const user = `postgres.${ref}`;
-  const host = `db.${ref}.supabase.co`;
+  // Use Port 6543 for IPv4 compatibility and connection pooling (Supavisor)
+  const host = `db.${ref}.supabase.co`; 
   const port = 6543; 
   const db = "postgres";
   const params = "sslmode=require&supavisor_session=true";
@@ -43,12 +45,22 @@ function getSanitizedConnectionString() {
 const sequelize = new Sequelize(getSanitizedConnectionString(), {
   dialect: 'postgres',
   dialectModule: pg,
-  logging: false,
+  logging: (msg) => console.log(`[DB] ${msg}`),
   dialectOptions: {
-    ssl: { require: true, rejectUnauthorized: false },
-    connectTimeout: 30000,
+    ssl: {
+      require: true,
+      rejectUnauthorized: false
+    },
+    // Crucial for Vercel: shorter timeout so the function doesn't hang indefinitely
+    connectTimeout: 10000,
   },
-  pool: { max: 1, min: 0, acquire: 30000, idle: 10000 }
+  // Serverless pooling: don't hold many connections open
+  pool: {
+    max: 2,
+    min: 0,
+    acquire: 15000,
+    idle: 5000
+  }
 });
 
 // --- MODELS ---
@@ -117,9 +129,29 @@ const checkRole = (roles) => (req, res, next) => {
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ success: true, status: 'operational', database: 'connected', user: sequelize.config.username });
+    res.json({ 
+      success: true, 
+      status: 'operational', 
+      database: 'connected', 
+      diagnostic: {
+        host: sequelize.config.host,
+        port: sequelize.config.port,
+        username_used: sequelize.config.username
+      }
+    });
   } catch (e) {
-    res.status(503).json({ success: false, status: 'degraded', error: e.message, user: sequelize.config.username });
+    console.error("Health Check Failure:", e);
+    res.status(503).json({ 
+      success: false, 
+      status: 'degraded', 
+      error: e.message, 
+      diagnostic: {
+        attempted_host: sequelize.config.host,
+        attempted_port: sequelize.config.port,
+        attempted_user: sequelize.config.username
+      },
+      hint: "Supabase host ENOTFOUND usually means you need to use Port 6543 (Transaction Pooler). Ensure your DATABASE_URL environment variable is set in Vercel."
+    });
   }
 });
 
@@ -142,10 +174,36 @@ app.get('/api/system/bootstrap', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// Leads
+app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
+  try {
+    const l = await Lead.findAll({ order: [['createdAt', 'DESC']] });
+    res.json({ success: true, data: l });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/leads/:id', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
+  try {
+    const l = await Lead.findByPk(req.params.id);
+    if (!l) return res.status(404).json({ success: false, message: 'Lead not found' });
+    await l.update(req.body);
+    res.json({ success: true, data: l });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/leads', async (req, res) => {
+  try {
+    const l = await Lead.create(req.body);
+    res.json({ success: true, data: l });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 // Profiles
 app.get('/api/profiles/me', auth, async (req, res) => {
-  const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
-  res.json({ success: true, data: p });
+  try {
+    const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin', 'nutritionist']), async (req, res) => {
@@ -158,48 +216,72 @@ app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin', 'nutriti
 });
 
 app.get('/api/profiles', auth, async (req, res) => {
-  const { role } = req.query;
-  const filter = role ? { where: { role } } : {};
-  const data = await Profile.findAll({ ...filter, attributes: { exclude: ['password'] } });
-  res.json({ success: true, data });
+  try {
+    const { role } = req.query;
+    const filter = role ? { where: { role } } : {};
+    const data = await Profile.findAll({ ...filter, attributes: { exclude: ['password'] } });
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 // Plans
 app.get('/api/plans', async (req, res) => {
-  const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
-  res.json({ success: true, data: p });
+  try {
+    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/plans', auth, checkRole(['super_admin']), async (req, res) => {
-  const p = await TrainingPlan.create(req.body);
-  res.json({ success: true, data: p });
-});
+// Checkout
+app.post('/api/checkout/create-session', async (req, res) => {
+  try {
+    const { planId, customerEmail } = req.body;
+    const plan = await TrainingPlan.findByPk(planId);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
-// Finance
-app.get('/api/finance', auth, checkRole(['super_admin']), async (req, res) => {
-  const members = await Profile.findAll({ where: { role: 'member' } });
-  const plans = await TrainingPlan.findAll();
-  const records = members.map(m => {
-    const plan = plans.find(p => p.id === m.activePlanId);
-    return { athlete_name: m.name, email: m.email, status: 'active', monthly_rate: plan ? parseFloat(plan.price) : 0 };
-  });
-  res.json({ success: true, data: records });
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: plan.name,
+            description: plan.description,
+          },
+          unit_amount: Math.round(plan.price * 100),
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${req.headers.origin}/?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/?canceled=true`,
+      customer_email: customerEmail || undefined,
+    });
+
+    res.json({ success: true, url: session.url });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 // Auth
 app.post('/api/profiles/login', async (req, res) => {
-  const p = await Profile.findOne({ where: { email: req.body.email } });
-  if (p && await bcrypt.compare(req.body.password, p.password)) {
-    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-    res.json({ success: true, data: p, token });
-  } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
+  try {
+    const p = await Profile.findOne({ where: { email: req.body.email } });
+    if (p && await bcrypt.compare(req.body.password, p.password)) {
+      const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+      res.json({ success: true, data: p, token });
+    } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/profiles/signup', async (req, res) => {
-  const hash = await bcrypt.hash(req.body.password || 'FitLife2024!', 10);
-  const p = await Profile.create({ ...req.body, password: hash });
-  const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-  res.status(201).json({ success: true, data: p, token });
+  try {
+    const hash = await bcrypt.hash(req.body.password || 'FitLife2024!', 10);
+    const p = await Profile.create({ ...req.body, password: hash });
+    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+    res.status(201).json({ success: true, data: p, token });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 export default app;

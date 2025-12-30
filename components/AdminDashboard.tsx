@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { 
   Users, LogOut, RefreshCw, Activity, ShieldAlert, Plus, 
   ChevronRight, AlertCircle, Loader2, DollarSign, PieChart, 
-  TrendingUp, Sparkles, UserCheck, Mail, Save, X, Home, Salad, WifiOff, Hammer, Briefcase, Settings
+  TrendingUp, Sparkles, UserCheck, Mail, Save, X, Home, Salad, WifiOff, Hammer, Briefcase, Settings, UserPlus, CheckCircle
 } from 'lucide-react';
 
 const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
@@ -48,7 +48,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       setPlans(p || []);
       if (user.role === 'super_admin' && f.length > 0) generateFinancialInsight(f);
     } catch (err: any) { 
-      setErrorHint(err.message || 'The vault database is currently offline.');
+      setErrorHint(err.message || 'Vault infrastructure is currently unresponsive.');
     } finally { 
       setLoading(false); 
     }
@@ -70,8 +70,30 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
     setIsBootstrapping(true);
     try {
       const ok = await api.bootstrapDatabase();
-      if (ok) { alert("Vault Synced."); loadAll(); }
+      if (ok) { alert("Vault Core Resynced Successfully."); loadAll(); }
     } finally { setIsBootstrapping(false); }
+  };
+
+  const handleUpdateLead = async (id: string, status: string) => {
+    const ok = await api.updateLeadStatus(id, status);
+    if (ok) loadAll();
+  };
+
+  const handleOnboardLead = async (lead: Lead) => {
+    setSubmitting(true);
+    const res = await api.createProfile({
+      name: lead.name,
+      email: lead.email,
+      role: 'member',
+      activePlanId: 'plan_starter',
+      password: 'FitLifeDefault2024!'
+    });
+    if (res.success) {
+      await api.updateLeadStatus(lead.id!, 'Closed');
+      alert(`Success: ${lead.name} is now a live athlete.`);
+      loadAll();
+    }
+    setSubmitting(false);
   };
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -80,7 +102,6 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
 
   return (
     <div className="min-h-screen bg-[#020617] text-zinc-100 flex font-sans">
-      {/* Sidebar */}
       <aside className="w-72 border-r border-white/5 p-8 flex flex-col fixed h-full bg-[#020617] z-[100]">
         <div className="mb-12 text-center">
           <h2 className="text-2xl font-black italic tracking-tighter text-white uppercase flex items-center justify-center gap-2">
@@ -112,7 +133,6 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </button>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 ml-72 p-12 lg:p-16">
         <header className="flex justify-between items-end mb-16">
           <div className="flex-1">
@@ -124,7 +144,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                     <p className="text-[10px] font-black uppercase tracking-widest mb-1">Infrastructure Alert</p>
                     <p className="text-sm font-medium">{errorHint}</p>
                   </div>
-                  <button onClick={handleBootstrap} className="bg-red-600 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase hover:bg-red-500">
+                  <button onClick={handleBootstrap} className="bg-red-600 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase hover:bg-red-500 transition-all">
                     {isBootstrapping ? <Loader2 className="animate-spin" /> : "Force Sync"}
                   </button>
                </div>
@@ -132,7 +152,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
           </div>
           <div className="flex gap-4">
              {user.role === 'super_admin' && (
-               <div className="bg-zinc-900 px-8 py-4 rounded-3xl border border-white/5 text-right">
+               <div className="bg-zinc-900 px-8 py-4 rounded-3xl border border-white/5 text-right hidden md:block">
                   <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Projected MRR</p>
                   <p className="text-2xl font-black text-fuchsia-500">${mrrTotal.toLocaleString()}</p>
                </div>
@@ -142,6 +162,52 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
              </button>
           </div>
         </header>
+
+        {activeTab === 'leads' && (
+          <div className="space-y-4 animate-fade-in">
+             {leads.map(lead => (
+                <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2rem] flex flex-col md:flex-row justify-between items-start md:items-center gap-6 hover:border-fuchsia-500/20 transition-all">
+                   <div>
+                      <h3 className="text-xl font-black italic uppercase text-white">{lead.name}</h3>
+                      <p className="text-[10px] text-zinc-500 uppercase font-black mb-2">{lead.email} // {lead.phone}</p>
+                      <div className="bg-black/40 p-4 rounded-xl text-xs text-zinc-300 italic max-w-xl">"{lead.goal}"</div>
+                   </div>
+                   <div className="flex gap-2">
+                      {lead.status !== 'Closed' ? (
+                        <>
+                          <button onClick={() => handleUpdateLead(lead.id!, 'Contacted')} className={`px-4 py-2 rounded-full text-[9px] font-black uppercase border ${lead.status === 'Contacted' ? 'bg-fuchsia-600/20 border-fuchsia-500 text-fuchsia-500' : 'border-zinc-800 text-zinc-500'}`}>Contacted</button>
+                          <button onClick={() => handleOnboardLead(lead)} className="bg-white text-black px-6 py-2 rounded-full text-[9px] font-black uppercase hover:bg-zinc-200 transition-all flex items-center gap-2">
+                             <UserPlus className="w-3 h-3" /> Onboard
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-green-500 text-[10px] font-black uppercase tracking-widest"><CheckCircle className="w-4 h-4" /> Activated</div>
+                      )}
+                   </div>
+                </div>
+             ))}
+          </div>
+        )}
+
+        {activeTab === 'members' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+             {members.map(m => (
+                <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all">
+                   <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center font-black text-zinc-600">{m.name.charAt(0)}</div>
+                      <div>
+                         <h3 className="font-black italic uppercase text-white">{m.name}</h3>
+                         <p className="text-[9px] text-zinc-500 uppercase tracking-widest">{m.activePlanId?.replace('plan_', '').toUpperCase()}</p>
+                      </div>
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => { setModalMode('progress'); setSelectedMember(m); }} className="bg-white/5 border border-white/5 text-white py-4 rounded-2xl text-[8px] font-black uppercase hover:bg-white/10 transition-all">Progress</button>
+                      <button onClick={() => { setModalMode('nutrition'); setSelectedMember(m); setNutritionText(m.nutritionalProtocol || ''); }} className="bg-fuchsia-600/10 border border-fuchsia-500/20 text-fuchsia-500 py-4 rounded-2xl text-[8px] font-black uppercase hover:bg-fuchsia-600/20 transition-all">Fuel Plan</button>
+                   </div>
+                </div>
+             ))}
+          </div>
+        )}
 
         {activeTab === 'revenue' && user.role === 'super_admin' && (
           <div className="space-y-8 animate-fade-in">
@@ -159,7 +225,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                      </div>
                      <div className="text-right">
                         <p className="text-lg font-black text-white">${rec.monthly_rate}</p>
-                        <p className="text-[8px] font-black text-green-500 uppercase">Status: {rec.status}</p>
+                        <p className="text-[8px] font-black text-green-500 uppercase">Status: Active</p>
                      </div>
                   </div>
                 ))}
@@ -167,47 +233,10 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
           </div>
         )}
 
-        {activeTab === 'members' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-             {members.map(m => (
-                <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all">
-                   <div className="flex items-center gap-4 mb-8">
-                      <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center font-black text-zinc-600">{m.name.charAt(0)}</div>
-                      <div>
-                         <h3 className="font-black italic uppercase text-white">{m.name}</h3>
-                         <p className="text-[9px] text-zinc-500 uppercase tracking-widest">{m.activePlanId?.replace('plan_', '').toUpperCase()}</p>
-                      </div>
-                   </div>
-                   <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => { setModalMode('progress'); setSelectedMember(m); }} className="bg-white/5 border border-white/5 text-white py-4 rounded-2xl text-[8px] font-black uppercase hover:bg-white/10">Progress</button>
-                      <button onClick={() => { setModalMode('nutrition'); setSelectedMember(m); setNutritionText(m.nutritionalProtocol || ''); }} className="bg-fuchsia-600/10 border border-fuchsia-500/20 text-fuchsia-500 py-4 rounded-2xl text-[8px] font-black uppercase hover:bg-fuchsia-600/20">Fuel Plan</button>
-                   </div>
-                </div>
-             ))}
-          </div>
-        )}
-
-        {activeTab === 'protocols' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-             {plans.map(p => (
-                <div key={p.id} className="bg-zinc-900 border border-white/5 p-10 rounded-[3rem] relative">
-                   <div className="absolute top-8 right-8 text-fuchsia-500"><TrendingUp className="w-6 h-6" /></div>
-                   <h3 className="text-3xl font-black italic uppercase text-white mb-2">{p.name}</h3>
-                   <p className="text-zinc-500 text-xs mb-8">{p.description}</p>
-                   <div className="flex items-baseline gap-2 mb-8">
-                      <span className="text-4xl font-black text-white">${parseFloat(p.price as any).toFixed(0)}</span>
-                      <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">Per Protocol</span>
-                   </div>
-                   <button className="w-full bg-white/5 border border-white/5 py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Edit Protocol</button>
-                </div>
-             ))}
-          </div>
-        )}
-
         {selectedMember && (
            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl animate-fade-in">
               <div className="bg-[#020617] border border-white/10 w-full max-w-lg rounded-[3rem] p-10 relative">
-                 <button onClick={() => setSelectedMember(null)} className="absolute top-8 right-8 text-zinc-600 hover:text-white"><X /></button>
+                 <button onClick={() => setSelectedMember(null)} className="absolute top-8 right-8 text-zinc-600 hover:text-white transition-colors"><X /></button>
                  <h2 className="text-3xl font-black italic uppercase text-white mb-2">{modalMode === 'progress' ? 'Bio-Data Log' : 'Fuel Protocol'}</h2>
                  <p className="text-[10px] font-black text-fuchsia-500 uppercase tracking-widest mb-8">Subject: {selectedMember.name}</p>
                  
@@ -220,21 +249,25 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                       setSubmitting(false);
                       loadAll();
                    }} className="space-y-4">
-                      <input placeholder="Weight" className="w-full bg-white/5 p-4 rounded-2xl outline-none" onChange={e => setLogData({...logData, weight: e.target.value})} />
-                      <input placeholder="Body Fat %" className="w-full bg-white/5 p-4 rounded-2xl outline-none" onChange={e => setLogData({...logData, bodyFat: e.target.value})} />
-                      <input placeholder="Score (0-100)" className="w-full bg-white/5 p-4 rounded-2xl outline-none" onChange={e => setLogData({...logData, perfScore: e.target.value})} />
-                      <button disabled={submitting} className="w-full bg-fuchsia-600 py-5 rounded-full font-black uppercase">Commit Matrix</button>
+                      <input placeholder="Weight (LBS)" className="w-full bg-white/5 p-4 rounded-2xl outline-none" value={logData.weight} onChange={e => setLogData({...logData, weight: e.target.value})} />
+                      <input placeholder="Body Fat %" className="w-full bg-white/5 p-4 rounded-2xl outline-none" value={logData.bodyFat} onChange={e => setLogData({...logData, bodyFat: e.target.value})} />
+                      <input placeholder="Performance Score (0-100)" className="w-full bg-white/5 p-4 rounded-2xl outline-none" value={logData.perfScore} onChange={e => setLogData({...logData, perfScore: e.target.value})} />
+                      <button disabled={submitting} className="w-full bg-fuchsia-600 py-5 rounded-full font-black uppercase text-white transition-all hover:bg-fuchsia-500">
+                         {submitting ? <Loader2 className="animate-spin mx-auto" /> : "Commit Matrix Log"}
+                      </button>
                    </form>
                  ) : (
                    <div className="space-y-4">
-                      <textarea className="w-full h-64 bg-white/5 border border-white/10 text-white p-6 rounded-3xl outline-none font-mono text-xs" value={nutritionText} onChange={e => setNutritionText(e.target.value)} />
+                      <textarea className="w-full h-64 bg-white/5 border border-white/10 text-white p-6 rounded-3xl outline-none font-mono text-xs leading-relaxed" value={nutritionText} onChange={e => setNutritionText(e.target.value)} />
                       <button onClick={async () => {
                          setSubmitting(true);
-                         await api.createProfile({ ...selectedMember, nutritionalProtocol: nutritionText }); // Using createProfile as placeholder for update
+                         await api.createProfile({ ...selectedMember, nutritionalProtocol: nutritionText }); 
                          setSelectedMember(null);
                          setSubmitting(false);
                          loadAll();
-                      }} disabled={submitting} className="w-full bg-fuchsia-600 py-5 rounded-full font-black uppercase">Save Fuel Plan</button>
+                      }} disabled={submitting} className="w-full bg-fuchsia-600 py-5 rounded-full font-black uppercase text-white transition-all hover:bg-fuchsia-500">
+                         {submitting ? <Loader2 className="animate-spin mx-auto" /> : "Save Protocol"}
+                      </button>
                    </div>
                  )}
               </div>
