@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { X, Lock, Mail, Loader2, ArrowRight, ShieldCheck, UserPlus, User } from 'lucide-react';
+import { X, Lock, Mail, Loader2, ArrowRight, ShieldCheck, UserPlus, User, RefreshCw, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 import { UserProfile } from '../types';
 
@@ -14,12 +15,15 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [error, setError] = useState('');
+  const [showRepair, setShowRepair] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setShowRepair(false);
 
     try {
       if (mode === 'login') {
@@ -29,6 +33,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
           onClose();
         } else {
           setError(response.message || 'Vault credentials mismatch. Identity not verified.');
+          // Show repair option if it looks like a database sync issue
+          if (response.message?.toLowerCase().includes('sync') || response.message?.toLowerCase().includes('column')) {
+            setShowRepair(true);
+          }
         }
       } else {
         if (!name.trim()) {
@@ -53,8 +61,29 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
     } catch (err: any) {
       console.error("Auth Exception:", err);
       setError(err.message || 'System infrastructure timeout. Please retry.');
+      if (err.message?.toLowerCase().includes('column') || err.message?.toLowerCase().includes('exist')) {
+        setShowRepair(true);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRepair = async () => {
+    setRepairing(true);
+    try {
+      const ok = await api.bootstrapDatabase();
+      if (ok) {
+        alert("Vault Infrastructure Repaired. Try logging in again.");
+        setShowRepair(false);
+        setError('');
+      } else {
+        alert("Repair failed. Please check backend connection.");
+      }
+    } catch (err) {
+      alert("Network error during repair.");
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -120,6 +149,18 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             </div>
           )}
 
+          {showRepair && (
+            <button 
+              type="button"
+              onClick={handleRepair}
+              disabled={repairing}
+              className="w-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-yellow-500/20 transition-all"
+            >
+              {repairing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              Emergency Repair Vault Database
+            </button>
+          )}
+
           <button 
             type="submit" 
             disabled={loading}
@@ -139,6 +180,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             onClick={() => {
               setMode(mode === 'login' ? 'signup' : 'login');
               setError('');
+              setShowRepair(false);
             }}
             className="text-fuchsia-500 hover:text-fuchsia-400 text-[11px] font-black uppercase tracking-[0.2em] transition-colors"
           >
@@ -149,7 +191,15 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
               <ShieldCheck className="w-3 h-3" /> Encrypted by FP infrastructure
             </p>
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[8px] text-zinc-700 hover:text-zinc-500 uppercase font-black transition-colors underline">System Status</a>
+            <div className="flex gap-4">
+               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[8px] text-zinc-700 hover:text-zinc-500 uppercase font-black transition-colors underline">System Status</a>
+               <button 
+                 onClick={() => setShowRepair(!showRepair)} 
+                 className="text-[8px] text-zinc-800 hover:text-zinc-600 uppercase font-black transition-colors flex items-center gap-1"
+               >
+                 <AlertTriangle className="w-2 h-2" /> Sync Mode
+               </button>
+            </div>
           </div>
         </div>
       </div>

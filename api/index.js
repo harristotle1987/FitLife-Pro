@@ -133,32 +133,40 @@ app.get('/api/system/health', async (req, res) => {
 
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    // Explicitly add missing columns to existing profiles table if needed
-    const columns = [
-      ['phone', 'TEXT'],
-      ['avatar_url', 'TEXT'],
-      ['bio', 'TEXT'],
-      ['assigned_coach_id', 'TEXT'],
-      ['assigned_coach_name', 'TEXT'],
-      ['assigned_nutritionist_name', 'TEXT'],
-      ['nutritional_protocol', 'TEXT'],
-      ['role', 'TEXT']
+    // 1. Manually check and add missing columns via Raw SQL to avoid model mismatch errors
+    const columnAdditions = [
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'member'",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bio TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_coach_id TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_coach_name TEXT DEFAULT 'Coach Bolt'",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_nutritionist_name TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS nutritional_protocol TEXT",
+      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS active_plan_id TEXT DEFAULT 'plan_starter'"
     ];
 
-    for (const [col, type] of columns) {
-      await sequelize.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ${col} ${type}`).catch(() => {});
+    for (const sql of columnAdditions) {
+      await sequelize.query(sql).catch(err => console.warn(`Migration step skipped: ${err.message}`));
     }
 
+    // 2. Synchronize model definitions
     await sequelize.sync({ alter: true });
     
+    // 3. Ensure Super Admin exists
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
-      defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
+      defaults: { 
+        name: 'Super Admin', 
+        password: hash, 
+        role: 'super_admin' 
+      } 
     });
 
     res.json({ success: true, message: 'Vault Core Infrastructure Synchronized with Supabase.' });
   } catch (e) { 
+    console.error("Bootstrap Error:", e);
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
@@ -168,7 +176,6 @@ app.post('/api/profiles/manual', adminAuth, async (req, res) => {
     const { name, email, password, role, activePlanId, phone } = req.body;
     const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
     
-    // Check if user exists
     const exists = await Profile.findOne({ where: { email } });
     if (exists) return res.status(400).json({ success: false, message: 'Identifier already exists in Vault.' });
 
@@ -207,7 +214,14 @@ app.post('/api/profiles/login', async (req, res) => {
     } else {
       res.status(401).json({ success: false, message: 'Invalid Credentials' });
     }
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  } catch (e) { 
+    console.error("Login Error:", e);
+    // If we catch a missing column error here, suggest bootstrap
+    if (e.message.includes('column') || e.message.includes('exist')) {
+       return res.status(500).json({ success: false, message: 'Vault Database Out of Sync. Please trigger "Repair Vault" on the login screen.' });
+    }
+    res.status(500).json({ success: false, message: e.message }); 
+  }
 });
 
 app.get('/api/profiles/me', auth, async (req, res) => {
