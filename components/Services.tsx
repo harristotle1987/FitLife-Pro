@@ -40,7 +40,24 @@ const Services: React.FC<ServicesProps> = ({ plans, loading, onSelectPlan }) => 
         </div>
 
         {loading ? (
-            <div className="text-center py-12 text-zinc-500 animate-pulse uppercase tracking-widest font-bold">Initializing Protocols...</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+                {[...Array(4)].map((_, i) => (
+                    <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden animate-pulse flex flex-col">
+                        <div className="h-48 bg-zinc-800"></div>
+                        <div className="p-8 flex-1 flex flex-col">
+                            <div className="h-6 w-3/4 bg-zinc-800 rounded mb-4"></div>
+                            <div className="space-y-2 flex-1">
+                                <div className="h-4 w-full bg-zinc-800 rounded"></div>
+                                <div className="h-4 w-5/6 bg-zinc-800 rounded"></div>
+                            </div>
+                            <div className="mt-8 grid grid-cols-2 gap-3">
+                                <div className="h-12 bg-zinc-800 rounded-xl"></div>
+                                <div className="h-12 bg-zinc-800 rounded-xl"></div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
         ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
                 {plans.map((plan, idx) => (

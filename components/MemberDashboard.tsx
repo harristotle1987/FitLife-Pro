@@ -58,6 +58,7 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
 
   useEffect(() => {
     const fetchAll = async () => {
+      setLoading(true);
       const [h, p] = await Promise.all([
         api.getMemberProgress(user.id),
         api.getProfile(user.id)
@@ -149,6 +150,37 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
     }
   };
 
+  const renderSkeleton = () => (
+    <div className="grid lg:grid-cols-3 gap-10 animate-pulse">
+        <div className="lg:col-span-2 space-y-8">
+            <div className="bg-zinc-900/30 border border-white/5 p-8 rounded-[3rem] h-48">
+                <div className="h-4 w-1/3 bg-zinc-800 rounded mb-6"></div>
+                <div className="space-y-3">
+                    <div className="h-6 bg-zinc-800 rounded"></div>
+                    <div className="h-6 w-5/6 bg-zinc-800 rounded"></div>
+                </div>
+            </div>
+            <div className="grid grid-cols-3 gap-6">
+                <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 h-28"></div>
+                <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 h-28"></div>
+                <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 h-28"></div>
+            </div>
+            <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
+                <div className="h-5 w-1/4 bg-zinc-800 rounded mb-6"></div>
+                <div className="space-y-4">
+                    <div className="h-20 bg-zinc-900 rounded-2xl"></div>
+                    <div className="h-20 bg-zinc-900 rounded-2xl"></div>
+                    <div className="h-20 bg-zinc-900 rounded-2xl"></div>
+                </div>
+            </div>
+        </div>
+        <div className="space-y-6">
+            <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-10 h-72"></div>
+            <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8 h-24"></div>
+        </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 font-sans selection:bg-fuchsia-600 selection:text-white">
       <div className="max-w-[1400px] mx-auto">
@@ -176,134 +208,136 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
           </div>
         </header>
 
-        <div className="grid lg:grid-cols-3 gap-10 animate-fade-in">
-          <div className="lg:col-span-2 space-y-8">
-            {activeTab === 'growth' && (
-              <>
-                <div className="bg-fuchsia-950/20 border border-fuchsia-500/20 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden">
-                   <div className="absolute top-8 right-8">
-                      {isAnalyzing ? <Loader2 className="w-5 h-5 text-fuchsia-500 animate-spin" /> : <Sparkles className="w-5 h-5 text-fuchsia-500 animate-pulse" />}
-                   </div>
-                   <BrainCircuit className="absolute -right-10 -top-10 w-48 h-48 opacity-[0.05]" />
-                   <h2 className="text-fuchsia-500 font-black uppercase text-[10px] tracking-widest mb-4 flex items-center gap-2">
-                     Coach Bolt Briefing {isAnalyzing && <span className="text-[8px] animate-pulse">(Analyzing Matrix...)</span>}
-                   </h2>
-                   <p className={`text-2xl font-black italic uppercase leading-relaxed transition-opacity duration-500 ${isAnalyzing ? 'opacity-30' : 'opacity-100'}`}>
-                     "{aiInsight}"
-                   </p>
-                </div>
-                <div className="grid grid-cols-3 gap-6">
-                   <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
-                      <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">Weight</p>
-                      <p className="text-4xl font-black">{history[0]?.weight || '--'} <span className="text-xs font-normal opacity-40">lbs</span></p>
-                   </div>
-                   <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
-                      <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">BF %</p>
-                      <p className="text-4xl font-black">{history[0]?.body_fat || '--'}%</p>
-                   </div>
-                   <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
-                      <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">Score</p>
-                      <p className="text-4xl font-black text-fuchsia-500 italic">{history[0]?.performance_score || '--'}</p>
-                   </div>
-                </div>
-                <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
-                   <h3 className="text-xl font-black italic uppercase mb-6">Matrix History</h3>
-                   <div className="space-y-4">
-                      {history.length === 0 ? (
-                        <p className="text-center py-12 text-zinc-600 font-black uppercase text-[10px] tracking-widest">No Biometric Logs Detected</p>
-                      ) : history.map(log => (
-                        <div key={log.id} className="flex items-center justify-between p-6 bg-black/40 rounded-2xl border border-white/5">
-                           <div className="flex items-center gap-4">
-                              <Calendar className="w-5 h-5 text-zinc-600" />
-                              <span className="text-sm font-bold uppercase">{new Date(log.date).toLocaleDateString()}</span>
-                           </div>
-                           <div className="flex gap-6">
-                              <span className="text-xs font-black uppercase tracking-widest">{log.weight}LBS</span>
-                              <span className="text-xs font-black text-fuchsia-500 uppercase tracking-widest">{log.performance_score}PTS</span>
-                           </div>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-              </>
-            )}
+        {loading ? renderSkeleton() : (
+          <div className="grid lg:grid-cols-3 gap-10 animate-fade-in">
+            <div className="lg:col-span-2 space-y-8">
+              {activeTab === 'growth' && (
+                <>
+                  <div className="bg-fuchsia-950/20 border border-fuchsia-500/20 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden">
+                     <div className="absolute top-8 right-8">
+                        {isAnalyzing ? <Loader2 className="w-5 h-5 text-fuchsia-500 animate-spin" /> : <Sparkles className="w-5 h-5 text-fuchsia-500 animate-pulse" />}
+                     </div>
+                     <BrainCircuit className="absolute -right-10 -top-10 w-48 h-48 opacity-[0.05]" />
+                     <h2 className="text-fuchsia-500 font-black uppercase text-[10px] tracking-widest mb-4 flex items-center gap-2">
+                       Coach Bolt Briefing {isAnalyzing && <span className="text-[8px] animate-pulse">(Analyzing Matrix...)</span>}
+                     </h2>
+                     <p className={`text-2xl font-black italic uppercase leading-relaxed transition-opacity duration-500 ${isAnalyzing ? 'opacity-30' : 'opacity-100'}`}>
+                       "{aiInsight}"
+                     </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-6">
+                     <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
+                        <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">Weight</p>
+                        <p className="text-4xl font-black">{history[0]?.weight || '--'} <span className="text-xs font-normal opacity-40">lbs</span></p>
+                     </div>
+                     <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
+                        <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">BF %</p>
+                        <p className="text-4xl font-black">{history[0]?.body_fat || '--'}%</p>
+                     </div>
+                     <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
+                        <p className="text-[9px] text-zinc-500 uppercase font-black mb-2">Score</p>
+                        <p className="text-4xl font-black text-fuchsia-500 italic">{history[0]?.performance_score || '--'}</p>
+                     </div>
+                  </div>
+                  <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
+                     <h3 className="text-xl font-black italic uppercase mb-6">Matrix History</h3>
+                     <div className="space-y-4">
+                        {history.length === 0 ? (
+                          <p className="text-center py-12 text-zinc-600 font-black uppercase text-[10px] tracking-widest">No Biometric Logs Detected</p>
+                        ) : history.map(log => (
+                          <div key={log.id} className="flex items-center justify-between p-6 bg-black/40 rounded-2xl border border-white/5">
+                             <div className="flex items-center gap-4">
+                                <Calendar className="w-5 h-5 text-zinc-600" />
+                                <span className="text-sm font-bold uppercase">{new Date(log.date).toLocaleDateString()}</span>
+                             </div>
+                             <div className="flex gap-6">
+                                <span className="text-xs font-black uppercase tracking-widest">{log.weight}LBS</span>
+                                <span className="text-xs font-black text-fuchsia-500 uppercase tracking-widest">{log.performance_score}PTS</span>
+                             </div>
+                          </div>
+                        ))}
+                     </div>
+                  </div>
+                </>
+              )}
 
-            {activeTab === 'fuel' && (
-              <div className="animate-fade-in space-y-8">
-                 <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-12 shadow-2xl">
-                    <div className="flex items-center gap-4 mb-10">
-                       <div className="p-5 bg-fuchsia-600/10 border border-fuchsia-500/20 rounded-2xl">
-                          <Salad className="w-10 h-10 text-fuchsia-500" />
-                       </div>
-                       <div>
-                          <p className="text-fuchsia-500 font-black uppercase text-[10px] tracking-[0.4em] mb-1">Assigned Protocol</p>
-                          <h2 className="text-4xl font-black italic text-white uppercase tracking-tighter">Fuel Infrastructure</h2>
-                       </div>
+              {activeTab === 'fuel' && (
+                <div className="animate-fade-in space-y-8">
+                   <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-12 shadow-2xl">
+                      <div className="flex items-center gap-4 mb-10">
+                         <div className="p-5 bg-fuchsia-600/10 border border-fuchsia-500/20 rounded-2xl">
+                            <Salad className="w-10 h-10 text-fuchsia-500" />
+                         </div>
+                         <div>
+                            <p className="text-fuchsia-500 font-black uppercase text-[10px] tracking-[0.4em] mb-1">Assigned Protocol</p>
+                            <h2 className="text-4xl font-black italic text-white uppercase tracking-tighter">Fuel Infrastructure</h2>
+                         </div>
+                      </div>
+                      <div className="bg-black/40 border border-white/5 p-10 rounded-[2.5rem] relative overflow-hidden">
+                         <pre className="text-zinc-200 font-mono text-sm leading-relaxed whitespace-pre-wrap">
+                            {profile.nutritionalProtocol || 'Metabolic analysis in progress.'}
+                         </pre>
+                      </div>
+                   </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-10 h-fit">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest mb-8 text-zinc-500">Operative Specialist</h3>
+                  <div className="flex items-center gap-4 mb-10">
+                     <div className="w-16 h-16 rounded-2xl bg-[#020617] border border-white/5 flex items-center justify-center">
+                        <img src={assets.ai_avatar} className="w-full h-full object-cover rounded-2xl opacity-50" />
+                     </div>
+                     <div>
+                        <p className="font-black italic uppercase text-white">{profile.assignedCoachName}</p>
+                        <p className="text-[9px] text-zinc-600 font-bold uppercase">Strategy Specialist</p>
+                     </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={toggleLiveCall}
+                      disabled={isConnecting}
+                      className={`w-full py-5 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
+                        isLiveActive 
+                          ? 'bg-red-600 text-white hover:bg-red-500' 
+                          : 'bg-fuchsia-600 text-white hover:bg-fuchsia-500'
+                      }`}
+                    >
+                      {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                        isLiveActive ? <><PhoneOff className="w-4 h-4" /> End Briefing</> : <><Mic className="w-4 h-4" /> Start Live Briefing</>
+                      )}
+                    </button>
+                    <button className="w-full bg-white text-black py-4 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-zinc-200 transition-all">Send Message</button>
+                  </div>
+
+                  {isLiveActive && (
+                    <div className="mt-8 p-6 bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-3xl animate-pulse">
+                      <div className="flex items-center justify-center gap-4 mb-2">
+                        <div className="h-1 w-8 bg-fuchsia-500 rounded-full"></div>
+                        <Volume2 className="w-5 h-5 text-fuchsia-500" />
+                        <div className="h-1 w-8 bg-fuchsia-500 rounded-full"></div>
+                      </div>
+                      <p className="text-[8px] font-black uppercase text-center text-fuchsia-500 tracking-[0.3em]">Specialist Online // Listening</p>
                     </div>
-                    <div className="bg-black/40 border border-white/5 p-10 rounded-[2.5rem] relative overflow-hidden">
-                       <pre className="text-zinc-200 font-mono text-sm leading-relaxed whitespace-pre-wrap">
-                          {profile.nutritionalProtocol || 'Metabolic analysis in progress.'}
-                       </pre>
-                    </div>
+                  )}
+              </div>
+              
+              <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
+                 <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4">Protocol Vitality</h4>
+                 <div className="flex items-center justify-between mb-2">
+                   <span className="text-[10px] font-bold uppercase">Consistency Matrix</span>
+                   <span className="text-[10px] font-bold text-fuchsia-500 italic">94%</span>
+                 </div>
+                 <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                   <div className="bg-fuchsia-600 h-full w-[94%] shadow-[0_0_10px_#c026d3]"></div>
                  </div>
               </div>
-            )}
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-10 h-fit">
-                <h3 className="text-[10px] font-black uppercase tracking-widest mb-8 text-zinc-500">Operative Specialist</h3>
-                <div className="flex items-center gap-4 mb-10">
-                   <div className="w-16 h-16 rounded-2xl bg-[#020617] border border-white/5 flex items-center justify-center">
-                      <img src={assets.ai_avatar} className="w-full h-full object-cover rounded-2xl opacity-50" />
-                   </div>
-                   <div>
-                      <p className="font-black italic uppercase text-white">{profile.assignedCoachName}</p>
-                      <p className="text-[9px] text-zinc-600 font-bold uppercase">Strategy Specialist</p>
-                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button 
-                    onClick={toggleLiveCall}
-                    disabled={isConnecting}
-                    className={`w-full py-5 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
-                      isLiveActive 
-                        ? 'bg-red-600 text-white hover:bg-red-500' 
-                        : 'bg-fuchsia-600 text-white hover:bg-fuchsia-500'
-                    }`}
-                  >
-                    {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                      isLiveActive ? <><PhoneOff className="w-4 h-4" /> End Briefing</> : <><Mic className="w-4 h-4" /> Start Live Briefing</>
-                    )}
-                  </button>
-                  <button className="w-full bg-white text-black py-4 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-zinc-200 transition-all">Send Message</button>
-                </div>
-
-                {isLiveActive && (
-                  <div className="mt-8 p-6 bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-3xl animate-pulse">
-                    <div className="flex items-center justify-center gap-4 mb-2">
-                      <div className="h-1 w-8 bg-fuchsia-500 rounded-full"></div>
-                      <Volume2 className="w-5 h-5 text-fuchsia-500" />
-                      <div className="h-1 w-8 bg-fuchsia-500 rounded-full"></div>
-                    </div>
-                    <p className="text-[8px] font-black uppercase text-center text-fuchsia-500 tracking-[0.3em]">Specialist Online // Listening</p>
-                  </div>
-                )}
-            </div>
-            
-            <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
-               <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4">Protocol Vitality</h4>
-               <div className="flex items-center justify-between mb-2">
-                 <span className="text-[10px] font-bold uppercase">Consistency Matrix</span>
-                 <span className="text-[10px] font-bold text-fuchsia-500 italic">94%</span>
-               </div>
-               <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                 <div className="bg-fuchsia-600 h-full w-[94%] shadow-[0_0_10px_#c026d3]"></div>
-               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -256,6 +256,69 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
     canManagePlans: "Manage Protocols (Plans)",
     canManageNutrition: "Manage Nutrition"
   };
+  
+  const renderSkeletons = () => {
+    switch(activeTab) {
+        case 'leads':
+            return (
+                <div className="space-y-6">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] animate-pulse">
+                            <div className="flex justify-between items-center">
+                                <div className="space-y-3">
+                                    <div className="h-6 w-48 bg-zinc-800 rounded"></div>
+                                    <div className="h-4 w-64 bg-zinc-800 rounded"></div>
+                                </div>
+                                <div className="flex gap-3">
+                                    <div className="h-14 w-40 bg-zinc-800 rounded-full"></div>
+                                    <div className="h-14 w-40 bg-zinc-800 rounded-full"></div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        case 'members':
+        case 'staff':
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] animate-pulse flex flex-col">
+                            <div className="h-6 w-3/4 bg-zinc-800 rounded mb-3"></div>
+                            <div className="h-4 w-1/2 bg-zinc-800 rounded mb-8"></div>
+                            <div className="mt-auto space-y-2">
+                                <div className="h-12 bg-zinc-800 rounded-2xl"></div>
+                                <div className="h-12 bg-zinc-800 rounded-2xl"></div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        case 'protocols':
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] animate-pulse">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="space-y-3">
+                                    <div className="h-6 w-40 bg-zinc-800 rounded"></div>
+                                    <div className="h-5 w-20 bg-zinc-800 rounded"></div>
+                                </div>
+                                <div className="h-10 w-10 bg-zinc-800 rounded-full"></div>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="h-4 bg-zinc-800 rounded"></div>
+                                <div className="h-4 w-5/6 bg-zinc-800 rounded"></div>
+                                <div className="h-4 w-3/4 bg-zinc-800 rounded"></div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        default:
+            return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#020617] text-zinc-100 flex font-sans overflow-hidden">
@@ -331,102 +394,106 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </header>
 
         <div className="animate-fade-in">
-          {activeTab === 'leads' && (
-            <div className="space-y-6">
-              {leads.length === 0 ? (
-                <div className="text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Intake Leads</div>
-              ) : leads.map(lead => (
-                <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] flex flex-col gap-8">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="text-2xl font-black italic uppercase text-white">{lead.name}</h3>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">{lead.email} // {lead.status}</p>
+          {loading ? renderSkeletons() : (
+            <>
+              {activeTab === 'leads' && (
+                <div className="space-y-6">
+                  {leads.length === 0 ? (
+                    <div className="text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Intake Leads</div>
+                  ) : leads.map(lead => (
+                    <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] flex flex-col gap-8">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="text-2xl font-black italic uppercase text-white">{lead.name}</h3>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">{lead.email} // {lead.status}</p>
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={() => handleGenerateStrategy(lead)} className="bg-zinc-800 text-white px-8 py-4 rounded-full text-[10px] font-black uppercase flex items-center gap-3">
+                             {analyzingLeadId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sword className="w-4 h-4" />} AI Strategize
+                          </button>
+                          <button onClick={() => handleOnboard(lead)} className="bg-white text-black px-8 py-4 rounded-full text-[10px] font-black uppercase">Onboard Athlete</button>
+                        </div>
+                      </div>
+                      {activeStrategy?.id === lead.id && (
+                        <div className="p-8 bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-3xl italic">
+                           "{activeStrategy.text}"
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-3">
-                      <button onClick={() => handleGenerateStrategy(lead)} className="bg-zinc-800 text-white px-8 py-4 rounded-full text-[10px] font-black uppercase flex items-center gap-3">
-                         {analyzingLeadId === lead.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sword className="w-4 h-4" />} AI Strategize
+                  ))}
+                </div>
+              )}
+
+              {activeTab === 'members' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {members.length === 0 ? (
+                    <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Athletes in Matrix</div>
+                  ) : members.map(m => (
+                    <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
+                      <h3 className="text-xl font-black italic uppercase text-white mb-2">{m.name}</h3>
+                      <p className="text-[9px] text-fuchsia-500 font-black uppercase mb-8">{m.activePlanId?.replace('plan_', '').toUpperCase()}</p>
+                      <div className="mt-auto flex flex-col gap-2">
+                        <button onClick={() => handleOpenMatrix(m)} className="w-full bg-white/5 border border-white/5 text-white py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                          <LineChart className="w-3 h-3" /> Matrix Sync
+                        </button>
+                        <button onClick={() => handleOpenAssignment(m)} className="w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
+                          <Settings className="w-3 h-3" /> Edit Profile
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeTab === 'staff' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {admins.length === 0 ? (
+                    <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Staff Operators in Squad</div>
+                  ) : admins.map(staff => (
+                    <div key={staff.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
+                      <div className="flex items-center gap-4 mb-8">
+                        <div className="p-3 bg-fuchsia-600/10 rounded-2xl border border-fuchsia-500/20">
+                          <ShieldCheck className="w-6 h-6 text-fuchsia-500" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black italic uppercase text-white">{staff.name}</h3>
+                          <p className="text-[9px] text-fuchsia-500 font-black uppercase">{staff.role.replace('_', ' ')}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => handleOpenAssignment(staff)} className="mt-auto w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
+                        <UserCog className="w-3 h-3" /> Edit Assignment
                       </button>
-                      <button onClick={() => handleOnboard(lead)} className="bg-white text-black px-8 py-4 rounded-full text-[10px] font-black uppercase">Onboard Athlete</button>
                     </div>
-                  </div>
-                  {activeStrategy?.id === lead.id && (
-                    <div className="p-8 bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-3xl italic">
-                       "{activeStrategy.text}"
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {activeTab === 'members' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {members.length === 0 ? (
-                <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Athletes in Matrix</div>
-              ) : members.map(m => (
-                <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
-                  <h3 className="text-xl font-black italic uppercase text-white mb-2">{m.name}</h3>
-                  <p className="text-[9px] text-fuchsia-500 font-black uppercase mb-8">{m.activePlanId?.replace('plan_', '').toUpperCase()}</p>
-                  <div className="mt-auto flex flex-col gap-2">
-                    <button onClick={() => handleOpenMatrix(m)} className="w-full bg-white/5 border border-white/5 text-white py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                      <LineChart className="w-3 h-3" /> Matrix Sync
-                    </button>
-                    <button onClick={() => handleOpenAssignment(m)} className="w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
-                      <Settings className="w-3 h-3" /> Edit Profile
-                    </button>
-                  </div>
+              {activeTab === 'protocols' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {plans.map(plan => (
+                     <div key={plan.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] flex flex-col">
+                        <div className="flex justify-between items-start mb-6">
+                           <div>
+                             <h3 className="text-2xl font-black italic uppercase text-white">{plan.name}</h3>
+                             <p className="text-fuchsia-500 font-black text-xl">${plan.price}</p>
+                           </div>
+                           <button onClick={() => setEditingPlan(plan)} className="p-3 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
+                              <Settings className="w-4 h-4" />
+                           </button>
+                        </div>
+                        <p className="text-zinc-400 text-sm mb-6">{plan.description}</p>
+                        <ul className="space-y-2 mt-auto">
+                           {plan.features.slice(0, 3).map((f, i) => (
+                             <li key={i} className="text-[10px] text-zinc-500 font-black uppercase tracking-widest flex items-center gap-2">
+                               <CheckSquare className="w-3 h-3 text-fuchsia-500" /> {f}
+                             </li>
+                           ))}
+                        </ul>
+                     </div>
+                   ))}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'staff' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {admins.length === 0 ? (
-                <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Staff Operators in Squad</div>
-              ) : admins.map(staff => (
-                <div key={staff.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
-                  <div className="flex items-center gap-4 mb-8">
-                    <div className="p-3 bg-fuchsia-600/10 rounded-2xl border border-fuchsia-500/20">
-                      <ShieldCheck className="w-6 h-6 text-fuchsia-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black italic uppercase text-white">{staff.name}</h3>
-                      <p className="text-[9px] text-fuchsia-500 font-black uppercase">{staff.role.replace('_', ' ')}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => handleOpenAssignment(staff)} className="mt-auto w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
-                    <UserCog className="w-3 h-3" /> Edit Assignment
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'protocols' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               {plans.map(plan => (
-                 <div key={plan.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] flex flex-col">
-                    <div className="flex justify-between items-start mb-6">
-                       <div>
-                         <h3 className="text-2xl font-black italic uppercase text-white">{plan.name}</h3>
-                         <p className="text-fuchsia-500 font-black text-xl">${plan.price}</p>
-                       </div>
-                       <button onClick={() => setEditingPlan(plan)} className="p-3 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
-                          <Settings className="w-4 h-4" />
-                       </button>
-                    </div>
-                    <p className="text-zinc-400 text-sm mb-6">{plan.description}</p>
-                    <ul className="space-y-2 mt-auto">
-                       {plan.features.slice(0, 3).map((f, i) => (
-                         <li key={i} className="text-[10px] text-zinc-500 font-black uppercase tracking-widest flex items-center gap-2">
-                           <CheckSquare className="w-3 h-3 text-fuchsia-500" /> {f}
-                         </li>
-                       ))}
-                    </ul>
-                 </div>
-               ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       </main>
