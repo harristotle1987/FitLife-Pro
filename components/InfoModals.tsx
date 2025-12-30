@@ -1,5 +1,7 @@
+
 import React from 'react';
 import { X, Shield, FileText, HelpCircle, ChevronRight } from 'lucide-react';
+import RevealOnScroll from './RevealOnScroll.tsx'; // Added missing .tsx extension
 
 export type InfoModalType = 'privacy' | 'terms' | 'faq' | null;
 
@@ -63,12 +65,14 @@ const InfoModals: React.FC<InfoModalsProps> = ({ activeModal, onClose }) => {
             { q: "Can I switch protocols?", a: "Protocol shifts occur at the end of each 4-week block based on the data trends in your Growth Matrix." },
             { q: "Is nutrition included?", a: "Every protocol from 'Starter' to 'Pinnacle' includes surgical nutrition guidance. Higher tiers include 24/7 concierge support." }
           ].map((item, i) => (
-            <div key={i} className="bg-zinc-900/50 p-5 rounded-2xl border border-zinc-800 group hover:border-fuchsia-500/30 transition-colors">
-              <p className="text-white font-black uppercase text-[10px] tracking-widest mb-2 flex items-center gap-2">
-                <ChevronRight className="w-3 h-3 text-fuchsia-500" /> {item.q}
-              </p>
-              <p className="text-zinc-500 text-xs leading-relaxed">{item.a}</p>
-            </div>
+            <RevealOnScroll key={i} variant="up" delay={i * 50}> {/* Added RevealOnScroll here */}
+              <div className="bg-zinc-900/50 p-5 rounded-2xl border border-zinc-800 group hover:border-fuchsia-500/30 transition-colors">
+                <p className="text-white font-black uppercase text-[10px] tracking-widest mb-2 flex items-center gap-2">
+                  <ChevronRight className="w-3 h-3 text-fuchsia-500" /> {item.q}
+                </p>
+                <p className="text-zinc-500 text-xs leading-relaxed">{item.a}</p>
+              </div>
+            </RevealOnScroll>
           ))}
         </div>
       )

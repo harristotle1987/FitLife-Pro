@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { Target, ShieldCheck, Zap } from 'lucide-react';
-import RevealOnScroll from './RevealOnScroll';
-import * as assets from '../assets';
+import RevealOnScroll from './RevealOnScroll.tsx';
+import * as assets from '../assets.ts';
 
 const About = () => {
   return (

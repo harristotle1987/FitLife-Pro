@@ -1,6 +1,7 @@
+
 import React from 'react';
-import RevealOnScroll from './RevealOnScroll';
-import * as assets from '../assets';
+import RevealOnScroll from './RevealOnScroll.tsx';
+import * as assets from '../assets.ts';
 
 const Areas = [
   {

@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { ShieldCheck } from 'lucide-react';
-import RevealOnScroll from './RevealOnScroll';
+import RevealOnScroll from './RevealOnScroll.tsx';
 
 const TrustedPayment = () => {
   return (

@@ -1,6 +1,7 @@
+
 import React from 'react';
-import RevealOnScroll from './RevealOnScroll';
-import * as assets from '../assets';
+import RevealOnScroll from './RevealOnScroll.tsx';
+import * as assets from '../assets.ts';
 
 const Trainers = [
   { name: "Cesar DeCosta", title: "Fitness Director", specialty: "Body Recomposition", image: assets.team_cesar },

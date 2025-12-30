@@ -1,7 +1,8 @@
+
 import React from 'react';
-import { Testimonial } from '../types';
+import { Testimonial } from '../types.ts';
 import { Star, CheckCircle } from 'lucide-react';
-import RevealOnScroll from './RevealOnScroll';
+import RevealOnScroll from './RevealOnScroll.tsx';
 
 interface TestimonialsProps {
   testimonials: Testimonial[];
