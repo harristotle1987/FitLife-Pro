@@ -15,18 +15,29 @@ const fetchSafe = async (url: string, options: any = {}) => {
 
   try {
     const res = await fetch(url, { ...options, headers });
-    const text = await res.text();
     
-    let json;
-    try {
-      json = text ? JSON.parse(text) : {};
-    } catch (e) {
-      // If it's not JSON, it might be a Vercel HTML error page
+    // Handle 503 Service Unavailable (usually when DB is down/paused)
+    if (res.status === 503) {
+      const errJson = await res.json();
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `The server returned an unexpected response (Status ${res.status}). This usually indicates a temporary connection issue between Vercel and Supabase. Please try again in a few seconds.` 
+          message: `The database is currently unreachable. ${errJson.hint || 'Check if your Supabase project is paused.'}` 
+        }) 
+      };
+    }
+
+    const text = await res.text();
+    let json;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch (e) {
+      return { 
+        ok: false, 
+        json: () => Promise.resolve({ 
+          success: false, 
+          message: `Server Error (${res.status}). The connection to the database might be unstable.` 
         }) 
       };
     }
@@ -38,12 +49,11 @@ const fetchSafe = async (url: string, options: any = {}) => {
 
     return { ok: res.ok, json: () => Promise.resolve(json) };
   } catch (e: any) {
-    console.error(`[API CONNECTION ERROR] @ ${url}:`, e);
     return { 
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: `Network failure: ${e.message || 'Cannot reach server.'}` 
+        message: `Network failure: Cannot reach server. Ensure the Vercel project is deployed correctly.` 
       }) 
     };
   }
@@ -113,7 +123,6 @@ export const api = {
     const res = await fetchSafe(`${API_BASE}/profiles/signup`, { method: 'POST', body: JSON.stringify(data) });
     return res.json();
   },
-  // Added getFinancialHealth to fix AdminDashboard.tsx error
   getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
     const res = await fetchSafe(`${API_BASE}/finance`);
     const json = await res.json();

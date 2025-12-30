@@ -17,20 +17,27 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 const stripe = new Stripe(STRIPE_SECRET);
 
 // --- DATABASE CONFIGURATION ---
-// User confirmed: db.euuqfcglulkeyxaqcpvz.supabase.co
-const VERIFIED_PG_URL = "postgresql://postgres:Colony082987Fit@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
+const DB_PASSWORD = "Colony082987Fit";
+const FALLBACK_REF = "euuqfcglulkeyxaqcpvz";
 
-// Select the best possible connection string
-let connectionString = VERIFIED_PG_URL;
-const envUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+function getSanitizedConnectionString() {
+  const envUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+  
+  if (envUrl.startsWith('postgres://') || envUrl.startsWith('postgresql://')) {
+    return envUrl;
+  }
 
-if (envUrl && (envUrl.startsWith('postgres://') || envUrl.startsWith('postgresql://'))) {
-  connectionString = envUrl;
-} else if (envUrl && envUrl.startsWith('https')) {
-  console.warn("SYSTEM: DATABASE_URL is an HTTPS link. Ignoring and using verified Direct PG URL.");
+  if (envUrl.startsWith('https://')) {
+    const match = envUrl.match(/https:\/\/([^.]+)\.supabase/);
+    const ref = (match && match[1]) ? match[1] : FALLBACK_REF;
+    return `postgresql://postgres:${DB_PASSWORD}@db.${ref}.supabase.co:5432/postgres`;
+  }
+
+  return `postgresql://postgres:${DB_PASSWORD}@db.${FALLBACK_REF}.supabase.co:5432/postgres`;
 }
 
-// Initialize Sequelize
+const connectionString = getSanitizedConnectionString();
+
 const sequelize = new Sequelize(connectionString, {
   dialect: 'postgres',
   dialectModule: pg,
@@ -40,10 +47,10 @@ const sequelize = new Sequelize(connectionString, {
       require: true,
       rejectUnauthorized: false
     },
-    connectTimeout: 60000 // 60s for cold starts
+    connectTimeout: 60000,
   },
   pool: {
-    max: 1, // Stay under Supabase limits
+    max: 1,
     min: 0,
     acquire: 60000,
     idle: 10000
@@ -51,8 +58,6 @@ const sequelize = new Sequelize(connectionString, {
 });
 
 // --- MODELS ---
-// Defining models on the sequelize instance immediately. 
-// If constructor fails (it shouldn't now with fixed dialect), these would throw.
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -114,25 +119,18 @@ const checkRole = (roles) => (req, res, next) => {
   next();
 };
 
-// --- ROUTES ---
+// --- SYSTEM & SEED ROUTES ---
 
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ 
-      success: true, 
-      status: 'operational', 
-      database: 'connected',
-      host: sequelize.config.host
-    });
+    res.json({ success: true, status: 'operational', database: 'connected' });
   } catch (e) {
-    console.error("HEALTH_CHECK_FAILED:", e.message);
-    res.status(503).json({ 
-      success: false, 
-      status: 'degraded', 
-      error: e.message,
-      hint: "Check if Supabase project is active and credentials are correct."
-    });
+    let hint = "Check if the Supabase project is 'Paused' in the Supabase Dashboard.";
+    if (e.message.includes('ENOTFOUND')) {
+      hint = "DNS Resolution failed. This almost always means the project is Paused or Inactive in Supabase.";
+    }
+    res.status(503).json({ success: false, status: 'degraded', error: e.message, hint });
   }
 });
 
@@ -144,11 +142,25 @@ app.get('/api/system/bootstrap', async (req, res) => {
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
-    res.json({ success: true, message: 'Schema Synced.', adminCreated: created });
+
+    // Seed default plans if they don't exist
+    const plansCount = await TrainingPlan.count();
+    if (plansCount === 0) {
+      await TrainingPlan.bulkCreate([
+        { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
+        { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'Rapid transformation.', features: ['Custom Programming', 'Direct Messaging'] },
+        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] },
+        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'Bespoke lifestyle engineering.', features: ['VIP Access', 'Bloodwork Coordination'] }
+      ]);
+    }
+
+    res.json({ success: true, message: 'Schema Synced and Seeded.', adminCreated: created });
   } catch (e) { 
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
+
+// --- PROFILE ROUTES ---
 
 app.post('/api/profiles/login', async (req, res) => {
   try {
@@ -179,6 +191,31 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+app.get('/api/profiles', auth, async (req, res) => {
+  try {
+    const { role } = req.query;
+    const filter = role ? { where: { role } } : {};
+    const profiles = await Profile.findAll({ ...filter, attributes: { exclude: ['password'] } });
+    res.json({ success: true, data: profiles });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
+  try {
+    await Profile.update(req.body, { where: { id: req.params.id } });
+    res.json({ success: true, message: 'Profile Updated' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- LEAD ROUTES ---
+
+app.post('/api/leads', async (req, res) => {
+  try {
+    const lead = await Lead.create(req.body);
+    res.status(201).json({ success: true, data: lead });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
@@ -186,10 +223,82 @@ app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req,
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+app.patch('/api/leads/:id', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
+  try {
+    await Lead.update(req.body, { where: { id: req.params.id } });
+    res.json({ success: true, message: 'Lead Updated' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- PROGRESS ROUTES ---
+
+app.get('/api/progress', auth, async (req, res) => {
+  try {
+    const { member_id } = req.query;
+    // Members can only see their own progress unless requester is admin
+    const targetId = (req.user.role === 'member') ? req.user.id : member_id;
+    if (!targetId) return res.status(400).json({ success: false, message: 'Member ID required' });
+    
+    const logs = await Progress.findAll({ 
+      where: { memberId: targetId }, 
+      order: [['date', 'DESC']] 
+    });
+    res.json({ success: true, data: logs });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/progress', auth, checkRole(['super_admin', 'admin', 'coach']), async (req, res) => {
+  try {
+    const { member_id, weight, body_fat, performance_score } = req.body;
+    const log = await Progress.create({
+      memberId: member_id,
+      coachId: req.user.id,
+      weight,
+      bodyFat: body_fat,
+      performanceScore: performance_score
+    });
+    res.status(201).json({ success: true, data: log });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- UTILITY ROUTES ---
+
 app.get('/api/plans', async (req, res) => {
   try {
     const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.get('/api/finance', auth, checkRole(['super_admin']), async (req, res) => {
+  // Simple mock of financial data based on active plans
+  try {
+    const members = await Profile.findAll({ where: { role: 'member' } });
+    const plans = await TrainingPlan.findAll();
+    const records = members.map(m => {
+      const plan = plans.find(p => p.id === m.activePlanId);
+      return {
+        profile_id: m.id,
+        athlete_name: m.name,
+        email: m.email,
+        status: 'active',
+        next_billing: new Date(Date.now() + 2592000000).toISOString(),
+        monthly_rate: plan ? parseFloat(plan.price) : 0
+      };
+    });
+    res.json({ success: true, data: records });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/stripe/create-checkout', async (req, res) => {
+  try {
+    const { planId } = req.body;
+    const plan = await TrainingPlan.findByPk(planId);
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+    
+    // In a real app, you'd create a Stripe session here.
+    // Since we're in a demo/dev environment, we'll return a mock success.
+    res.json({ success: true, url: '#' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
