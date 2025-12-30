@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Modality } from "@google/genai";
-import { MemberProgress } from "./types";
+import { GoogleGenAI } from "@google/genai";
+import { MemberProgress } from "./types.ts";
 
 const SYSTEM_PROMPT = `You are COACH BOLT, a world-class High-Performance Executive Fitness Coach. 
 Your tone is intense, professional, data-driven, and high-energy. You do not accept excuses. 
@@ -16,7 +16,6 @@ export class FitnessChatSession {
   private ai: GoogleGenAI;
 
   constructor() {
-    // Correct initialization with process.env.API_KEY
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
@@ -30,7 +29,6 @@ export class FitnessChatSession {
           temperature: 0.7,
         }
       });
-      // Correct property access for text
       return response.text || "COMMUNICATION INTERRUPTED. RE-INITIATE.";
     } catch (e) {
       console.error("Gemini Error:", e);
@@ -48,14 +46,12 @@ export class FitnessChatSession {
     ).join(" | ");
 
     try {
-      // Using Pro model for advanced reasoning
       const response = await this.ai.models.generateContent({
         model: "gemini-3-pro-preview",
         contents: `Analyze this athlete's progress data and provide a 3-sentence "Strategic Briefing". Be intense and data-driven: ${dataString}`,
         config: {
           systemInstruction: "You are COACH BOLT. Provide a high-energy, surgical analysis of progress logs. Focus on trends and biological output.",
           temperature: 0.9,
-          // Using thinkingBudget for complex bio-data analysis
           thinkingConfig: { thinkingBudget: 4000 }
         }
       });
@@ -87,7 +83,7 @@ export class FitnessChatSession {
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       callbacks,
       config: {
-        responseModalities: [Modality.AUDIO], // Must contain exactly Modality.AUDIO
+        responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
         },

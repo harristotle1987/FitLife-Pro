@@ -1,4 +1,5 @@
-import { TrainingPlan, Testimonial } from './types';
+
+import { TrainingPlan, Testimonial } from './types.ts';
 
 export const TRAINING_PLANS: TrainingPlan[] = [
   {

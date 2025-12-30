@@ -1,6 +1,6 @@
 
-import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord, Testimonial } from './types';
-import { TRAINING_PLANS, TESTIMONIALS } from './constants';
+import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord, Testimonial } from './types.ts';
+import { TRAINING_PLANS, TESTIMONIALS } from './constants.ts';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'fitlife_vault_key_2024';
@@ -139,7 +139,6 @@ export const api = {
     const res = await fetchSafe(`${API_BASE}/profiles/manual`, { method: 'POST', body: JSON.stringify(data) });
     return res.json();
   },
-  // Added missing createCheckoutSession method
   createCheckoutSession: async (planId: string, email: string): Promise<string | null> => {
     const res = await fetchSafe(`${API_BASE}/checkout`, { method: 'POST', body: JSON.stringify({ planId, email }) });
     const json = await res.json();
