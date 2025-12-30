@@ -1,14 +1,15 @@
+
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
 // SUPABASE CONNECTION STRING
-// The password "Colony082987@" is correctly encoded as "Colony082987%40"
+// Using encoded password to prevent parsing issues
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
 
 const sequelize = new Sequelize(dbUrl, {
   dialect: 'postgres',
   protocol: 'postgres',
-  logging: false, // Set to console.log to debug SQL
+  logging: false,
   dialectOptions: {
     ssl: {
       require: true,
