@@ -164,7 +164,10 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
           </div>
           
           <div className="flex items-center gap-4">
-             <button onClick={onGoHome} className="p-4 bg-zinc-900 border border-white/5 rounded-full text-zinc-500 hover:text-white transition-all"><Home className="w-5 h-5" /></button>
+             <button onClick={onGoHome} className="flex items-center gap-3 px-6 py-4 bg-zinc-900 border border-white/5 rounded-full text-zinc-500 hover:text-white transition-all">
+                <Home className="w-5 h-5" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Go Home</span>
+             </button>
              <div className="flex bg-zinc-900/50 p-1 rounded-full border border-white/5">
                 <button onClick={() => setActiveTab('growth')} className={`px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'growth' ? 'bg-white text-black' : 'text-zinc-500'}`}>Growth</button>
                 <button onClick={() => setActiveTab('fuel')} className={`px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'fuel' ? 'bg-white text-black' : 'text-zinc-500'}`}>Fuel Lab</button>
