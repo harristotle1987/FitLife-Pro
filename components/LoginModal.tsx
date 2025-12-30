@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { X, Lock, Mail, Loader2, ArrowRight, ShieldCheck, UserPlus, User, RefreshCw, AlertTriangle } from 'lucide-react';
+import { X, Lock, Mail, Loader2, ArrowRight, ShieldCheck, UserPlus, User } from 'lucide-react';
 import { api } from '../api';
 import { UserProfile } from '../types';
 
@@ -15,15 +14,12 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [repairing, setRepairing] = useState(false);
   const [error, setError] = useState('');
-  const [showRepair, setShowRepair] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setShowRepair(false);
 
     try {
       if (mode === 'login') {
@@ -32,51 +28,33 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
           onLoginSuccess(response.data);
           onClose();
         } else {
-          setError(response.message || 'Vault credentials mismatch.');
-          if (response.message?.toLowerCase().includes('sync') || response.message?.toLowerCase().includes('column')) {
-            setShowRepair(true);
-          }
+          setError(response.message || 'Vault credentials mismatch. Identity not verified.');
         }
       } else {
         if (!name.trim()) {
-          setError('Athlete name required.');
+          setError('Athlete name required for protocol initialization.');
           setLoading(false);
           return;
         }
+        if (password.length < 6) {
+          setError('Security requirement: Password must be at least 6 characters.');
+          setLoading(false);
+          return;
+        }
+        
         const response = await api.register(name, email, password);
         if (response.success && response.data) {
           onLoginSuccess(response.data);
           onClose();
         } else {
-          setError(response.message || 'Identity conflict or infrastructure offline.');
+          setError(response.message || 'Identity conflict or infrastructure offline. Entry rejected.');
         }
       }
     } catch (err: any) {
-      setError(err.message || 'System infrastructure timeout.');
-      setShowRepair(true);
+      console.error("Auth Exception:", err);
+      setError(err.message || 'System infrastructure timeout. Please retry.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRepair = async () => {
-    setRepairing(true);
-    try {
-      // Call public bootstrap endpoint
-      const res = await fetch('/api/system/bootstrap');
-      const data = await res.json();
-      
-      if (data.success) {
-        alert("VAULT REPAIRED: Core Infrastructure Re-aligned. Please login now.");
-        setShowRepair(false);
-        setError('');
-      } else {
-        alert(`REPAIR FAILED: ${data.error || 'Unknown infrastructure error'}`);
-      }
-    } catch (err: any) {
-      alert(`NETWORK ERROR: ${err.message}. Ensure your database is reachable.`);
-    } finally {
-      setRepairing(false);
     }
   };
 
@@ -142,18 +120,6 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             </div>
           )}
 
-          {showRepair && (
-            <button 
-              type="button"
-              onClick={handleRepair}
-              disabled={repairing}
-              className="w-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-yellow-500/20 transition-all"
-            >
-              {repairing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-              Emergency Repair Vault Database
-            </button>
-          )}
-
           <button 
             type="submit" 
             disabled={loading}
@@ -173,25 +139,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             onClick={() => {
               setMode(mode === 'login' ? 'signup' : 'login');
               setError('');
-              setShowRepair(false);
             }}
             className="text-fuchsia-500 hover:text-fuchsia-400 text-[11px] font-black uppercase tracking-[0.2em] transition-colors"
           >
-            {mode === 'login' ? "New Member? Register" : "Already Member? Login"}
+            {mode === 'login' ? "New Member? Register Strategy" : "Existing Member? Return to Vault"}
           </button>
 
           <div className="flex flex-col items-center gap-2">
             <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest flex items-center gap-2">
               <ShieldCheck className="w-3 h-3" /> Encrypted by FP infrastructure
             </p>
-            <div className="flex gap-4">
-               <button 
-                 onClick={() => setShowRepair(!showRepair)} 
-                 className="text-[8px] text-zinc-800 hover:text-zinc-600 uppercase font-black transition-colors flex items-center gap-1"
-               >
-                 <AlertTriangle className="w-2 h-2" /> Sync Mode
-               </button>
-            </div>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[8px] text-zinc-700 hover:text-zinc-500 uppercase font-black transition-colors underline">System Status</a>
           </div>
         </div>
       </div>

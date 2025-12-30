@@ -74,6 +74,10 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : null;
   },
+  updateProfile: async (id: string, data: Partial<UserProfile>): Promise<{success: boolean, message?: string, data?: UserProfile}> => {
+    const res = await fetchSafe(`${API_BASE}/profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    return res.json();
+  },
   getPlans: async (): Promise<TrainingPlan[]> => {
     const res = await fetchSafe(`${API_BASE}/plans`);
     const json = await res.json();

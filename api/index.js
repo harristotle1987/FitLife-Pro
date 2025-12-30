@@ -46,24 +46,10 @@ const sequelize = new Sequelize(getConnectionString(), {
   pool: { max: 5, min: 1, acquire: 60000, idle: 10000 }
 });
 
-const Profile = sequelize.define('Profile', {
-  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  name: { type: DataTypes.STRING, allowNull: false },
-  email: { type: DataTypes.STRING, unique: true, allowNull: false },
-  password: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.STRING, defaultValue: 'member' },
-  permissions: { type: DataTypes.JSONB, defaultValue: {} },
-  phone: { type: DataTypes.STRING },
-  avatarUrl: { type: DataTypes.STRING, field: 'avatar_url' },
-  bio: { type: DataTypes.TEXT },
-  activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter', field: 'active_plan_id' },
-  assignedCoachId: { type: DataTypes.STRING, field: 'assigned_coach_id' },
-  assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt', field: 'assigned_coach_name' },
-  assignedNutritionistName: { type: DataTypes.STRING, field: 'assigned_nutritionist_name' },
-  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.', field: 'nutritional_protocol' },
-  createdAt: { type: DataTypes.DATE, field: 'created_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  updatedAt: { type: DataTypes.DATE, field: 'updated_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-}, { tableName: 'profiles', timestamps: true });
+const timestampConfig = {
+  created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  updated_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
+};
 
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
@@ -72,9 +58,25 @@ const Lead = sequelize.define('Lead', {
   goal: { type: DataTypes.TEXT },
   source: { type: DataTypes.STRING, defaultValue: 'Contact_Form' },
   status: { type: DataTypes.STRING, defaultValue: 'New' },
-  createdAt: { type: DataTypes.DATE, field: 'created_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  updatedAt: { type: DataTypes.DATE, field: 'updated_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-}, { tableName: 'leads', timestamps: true });
+  ...timestampConfig
+}, { tableName: 'leads', underscored: true, timestamps: true });
+
+const Profile = sequelize.define('Profile', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name: { type: DataTypes.STRING, allowNull: false },
+  email: { type: DataTypes.STRING, unique: true, allowNull: false },
+  password: { type: DataTypes.STRING, allowNull: false },
+  role: { type: DataTypes.STRING, defaultValue: 'member' },
+  phone: { type: DataTypes.STRING },
+  avatar_url: { type: DataTypes.STRING },
+  bio: { type: DataTypes.TEXT },
+  activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
+  assignedCoachId: { type: DataTypes.STRING },
+  assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
+  assignedNutritionistName: { type: DataTypes.STRING },
+  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
+  ...timestampConfig
+}, { tableName: 'profiles', underscored: true, timestamps: true });
 
 const TrainingPlan = sequelize.define('TrainingPlan', {
   id: { type: DataTypes.STRING, primaryKey: true },
@@ -82,47 +84,138 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   description: DataTypes.TEXT,
   features: { type: DataTypes.JSONB, defaultValue: [] },
-  createdAt: { type: DataTypes.DATE, field: 'created_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  updatedAt: { type: DataTypes.DATE, field: 'updated_at', defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-}, { tableName: 'plans', timestamps: true });
+  ...timestampConfig
+}, { tableName: 'plans', underscored: true, timestamps: true });
+
+const Testimonial = sequelize.define('Testimonial', {
+  client_name: { type: DataTypes.STRING, allowNull: false },
+  client_title: { type: DataTypes.STRING },
+  quote: { type: DataTypes.TEXT, allowNull: false },
+  rating: { type: DataTypes.INTEGER, defaultValue: 5 },
+  is_featured: { type: DataTypes.BOOLEAN, defaultValue: true },
+  ...timestampConfig
+}, { tableName: 'testimonials', underscored: true, timestamps: true });
 
 app.use(cors());
 app.use(express.json());
 
-// Public Bootstrap
+const auth = (req, res, next) => {
+  const h = req.headers.authorization;
+  if (!h || !h.startsWith('Bearer ')) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(h.split(' ')[1], JWT_SECRET);
+    next();
+  } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
+};
+
+const adminAuth = (req, res, next) => {
+  const h = req.headers.authorization;
+  if (!h || !h.startsWith('Bearer ')) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(h.split(' ')[1], JWT_SECRET);
+    if (decoded.role === 'super_admin' || decoded.role === 'admin') {
+      req.user = decoded;
+      next();
+    } else {
+      res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+  } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
+};
+
+app.get('/api/system/health', async (req, res) => {
+  try {
+    await sequelize.query('SELECT 1+1 AS result');
+    res.json({ success: true, status: 'operational', host: sequelize.config.host });
+  } catch (e) {
+    res.status(503).json({ success: false, status: 'degraded', error: e.message });
+  }
+});
+
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    await sequelize.query(`CREATE TABLE IF NOT EXISTS profiles (id UUID PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT)`);
-    await sequelize.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, name TEXT, email TEXT, phone TEXT, goal TEXT)`);
-    await sequelize.query(`CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, name TEXT, price DECIMAL, description TEXT)`);
-
-    const migrations = [
-      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'",
-      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone TEXT",
-      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'member'",
-      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS active_plan_id TEXT DEFAULT 'plan_starter'",
-      "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_coach_name TEXT DEFAULT 'Coach Bolt'"
+    const columns = [
+      ['phone', 'TEXT'],
+      ['avatar_url', 'TEXT'],
+      ['bio', 'TEXT'],
+      ['assigned_coach_id', 'TEXT'],
+      ['assigned_coach_name', 'TEXT'],
+      ['assigned_nutritionist_name', 'TEXT'],
+      ['nutritional_protocol', 'TEXT'],
+      ['role', 'TEXT']
     ];
-    for (const sql of migrations) await sequelize.query(sql).catch(() => {});
+
+    for (const [col, type] of columns) {
+      await sequelize.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ${col} ${type}`).catch(() => {});
+    }
+
     await sequelize.sync({ alter: true });
     
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
-      defaults: { name: 'Super Admin', password: hash, role: 'super_admin', permissions: { all: true } } 
+      defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
-    res.json({ success: true, message: 'Vault core infrastructure synchronized.' });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+
+    res.json({ success: true, message: 'Vault Core Infrastructure Synchronized with Supabase.' });
+  } catch (e) { 
+    res.status(500).json({ success: false, error: e.message }); 
+  }
 });
 
-app.post('/api/profiles/signup', async (req, res) => {
+app.post('/api/profiles/manual', adminAuth, async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    const hash = await bcrypt.hash(password, 10);
-    const p = await Profile.create({ name, email, password: hash, role: 'member' });
-    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-    res.json({ success: true, data: p, token });
+    const { name, email, password, role, activePlanId, phone } = req.body;
+    const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
+    
+    const exists = await Profile.findOne({ where: { email } });
+    if (exists) return res.status(400).json({ success: false, message: 'Identifier already exists in Vault.' });
+
+    const p = await Profile.create({
+      name,
+      email,
+      password: hash,
+      role: role || 'member',
+      phone: phone || '',
+      activePlanId: activePlanId || 'plan_starter'
+    });
+    res.json({ success: true, data: p });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.get('/api/profiles', adminAuth, async (req, res) => {
+  try {
+    const { role } = req.query;
+    const profiles = await Profile.findAll({ 
+      where: role ? { role } : {},
+      attributes: { exclude: ['password'] },
+      order: [['created_at', 'DESC']]
+    });
+    res.json({ success: true, data: profiles });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    // Prevent password updates via this route for security
+    delete updates.password;
+    delete updates.id;
+
+    const [updatedRows] = await Profile.update(updates, { where: { id } });
+    
+    if (updatedRows > 0) {
+      const p = await Profile.findByPk(id, { attributes: { exclude: ['password'] } });
+      res.json({ success: true, data: p });
+    } else {
+      res.status(404).json({ success: false, message: 'User not found' });
+    }
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.post('/api/profiles/login', async (req, res) => {
@@ -137,59 +230,17 @@ app.post('/api/profiles/login', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/profiles/me', async (req, res) => {
-  const h = req.headers.authorization;
-  if (!h) return res.status(401).json({ success: false });
+app.get('/api/profiles/me', auth, async (req, res) => {
   try {
-    const decoded = jwt.verify(h.split(' ')[1], JWT_SECRET);
-    const p = await Profile.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
+    const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
     res.json({ success: true, data: p });
-  } catch (e) { res.status(401).json({ success: false }); }
-});
-
-const adminAuth = (req, res, next) => {
-  const h = req.headers.authorization;
-  if (!h) return res.status(401).json({ success: false });
-  try {
-    const decoded = jwt.verify(h.split(' ')[1], JWT_SECRET);
-    if (decoded.role === 'super_admin' || decoded.role === 'admin') {
-      req.user = decoded;
-      next();
-    } else res.status(403).json({ success: false });
-  } catch (e) { res.status(401).json({ success: false }); }
-};
-
-app.get('/api/profiles', adminAuth, async (req, res) => {
-  try {
-    const { role } = req.query;
-    const profiles = await Profile.findAll({ where: role ? { role } : {}, attributes: { exclude: ['password'] } });
-    res.json({ success: true, data: profiles });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
+app.post('/api/leads', async (req, res) => {
   try {
-    const p = await Profile.findByPk(req.params.id);
-    if (p) {
-      await p.update(req.body);
-      res.json({ success: true, data: p });
-    } else res.status(404).json({ success: false });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/profiles/manual', adminAuth, async (req, res) => {
-  try {
-    const { name, email, password, role, permissions, phone } = req.body;
-    const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
-    const p = await Profile.create({ 
-      name, 
-      email, 
-      password: hash, 
-      role: role || 'member', 
-      permissions: permissions || {}, 
-      phone 
-    });
-    res.json({ success: true, data: p });
+    const l = await Lead.create(req.body);
+    res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
@@ -202,15 +253,8 @@ app.get('/api/leads/all', adminAuth, async (req, res) => {
 
 app.get('/api/plans', async (req, res) => {
   try {
-    const p = await TrainingPlan.findAll();
+    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/leads', async (req, res) => {
-  try {
-    const l = await Lead.create(req.body);
-    res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
