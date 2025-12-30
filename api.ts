@@ -23,13 +23,12 @@ const fetchSafe = async (url: string, options: any = {}) => {
       json = { success: false, message: "Response parsing failed." };
     }
 
-    // 503 is typical for Vercel timeouts when DB is down
     if (res.status === 503) {
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `Infrastructure Degraded: ${json.error || 'Connection Timeout'}. Hint: Ensure you are using Port 6543 for Supabase.` 
+          message: `Infrastructure Degraded: ${json.error || 'SSL Handshake Failed'}. Syncing database...` 
         }) 
       };
     }
@@ -45,7 +44,7 @@ const fetchSafe = async (url: string, options: any = {}) => {
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: `Network failure: ${e.message}. Ensure your database is accessible via Port 6543.` 
+        message: `Network failure: ${e.message}. Check Vercel logs.` 
       }) 
     };
   }

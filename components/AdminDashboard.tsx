@@ -2,11 +2,11 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { Lead, UserProfile, FinancialHealthRecord, TrainingPlan } from '../types';
-import { GoogleGenAI } from "@google/genai";
+import { FitnessChatSession } from '../aiService';
 import { 
   Users, LogOut, RefreshCw, Activity, ShieldAlert, Plus, 
   ChevronRight, AlertCircle, Loader2, DollarSign, PieChart, 
-  TrendingUp, Sparkles, UserCheck, Mail, Save, X, Home, Salad, WifiOff, Hammer, Briefcase, Settings, UserPlus, CheckCircle, Database
+  TrendingUp, Sparkles, UserCheck, Mail, Save, X, Home, Salad, WifiOff, Hammer, Briefcase, Settings, UserPlus, CheckCircle, Database, Sword
 } from 'lucide-react';
 
 const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
@@ -17,12 +17,13 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   const [errorHint, setErrorHint] = useState<string | null>(null);
   const [dbHost, setDbHost] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
+  const [analyzingLeadId, setAnalyzingLeadId] = useState<string | null>(null);
+  const [activeStrategy, setActiveStrategy] = useState<{id: string, text: string} | null>(null);
   
   const loadAll = useCallback(async () => {
     setLoading(true);
     setErrorHint(null);
     try {
-      // Check health and get host info
       const healthRes = await fetch('/api/system/health');
       const healthData = await healthRes.json();
       if (healthData.success) setDbHost(healthData.host);
@@ -43,6 +44,18 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   }, [user.id]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  const handleGenerateStrategy = async (lead: Lead) => {
+    if (!lead.id) return;
+    setAnalyzingLeadId(lead.id);
+    try {
+      const coach = new FitnessChatSession();
+      const strategy = await coach.generateLeadStrategy(lead.name, lead.goal);
+      setActiveStrategy({ id: lead.id, text: strategy });
+    } finally {
+      setAnalyzingLeadId(null);
+    }
+  };
 
   const handleBootstrap = async () => {
     setIsBootstrapping(true);
@@ -109,15 +122,39 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </header>
 
         {activeTab === 'leads' && (
-          <div className="space-y-4 animate-fade-in">
+          <div className="space-y-6 animate-fade-in">
              {leads.map(lead => (
-                <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2rem] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                   <div>
-                      <h3 className="text-xl font-black italic uppercase text-white">{lead.name}</h3>
-                      <p className="text-[10px] text-zinc-500 uppercase font-black">{lead.email} // {lead.phone}</p>
-                      <p className="text-xs text-zinc-400 mt-4 italic">"{lead.goal}"</p>
+                <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
+                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                      <div>
+                          <h3 className="text-xl font-black italic uppercase text-white">{lead.name}</h3>
+                          <p className="text-[10px] text-zinc-500 uppercase font-black">{lead.email} // {lead.phone}</p>
+                          <p className="text-xs text-zinc-400 mt-4 italic">"{lead.goal}"</p>
+                      </div>
+                      <div className="flex gap-3">
+                          <button 
+                            disabled={analyzingLeadId === lead.id}
+                            onClick={() => handleGenerateStrategy(lead)} 
+                            className="bg-white/5 border border-white/10 text-white px-6 py-3 rounded-full text-[9px] font-black uppercase hover:bg-fuchsia-600 hover:border-fuchsia-500 transition-all flex items-center gap-2"
+                          >
+                             {analyzingLeadId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sword className="w-3 h-3" />}
+                             Gen Battle Plan
+                          </button>
+                          <button onClick={() => alert('Onboarding logic initialized.')} className="bg-white text-black px-6 py-3 rounded-full text-[9px] font-black uppercase hover:bg-zinc-200 transition-all">Onboard Athlete</button>
+                      </div>
                    </div>
-                   <button onClick={() => alert('Onboarding logic initialized.')} className="bg-white text-black px-6 py-3 rounded-full text-[9px] font-black uppercase hover:bg-zinc-200 transition-all">Onboard Athlete</button>
+                   
+                   {activeStrategy?.id === lead.id && (
+                     <div className="bg-fuchsia-600/10 border border-fuchsia-500/30 p-6 rounded-2xl animate-fade-in relative">
+                        <button onClick={() => setActiveStrategy(null)} className="absolute top-4 right-4 text-fuchsia-500 hover:text-white"><X className="w-4 h-4" /></button>
+                        <h4 className="text-[8px] font-black uppercase tracking-[0.4em] text-fuchsia-500 mb-2 flex items-center gap-2">
+                           <Sparkles className="w-3 h-3" /> AI Strategic Assessment
+                        </h4>
+                        <p className="text-sm font-black italic uppercase text-white leading-relaxed">
+                           "{activeStrategy.text}"
+                        </p>
+                     </div>
+                   )}
                 </div>
              ))}
           </div>

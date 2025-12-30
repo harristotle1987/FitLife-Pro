@@ -2,14 +2,18 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { UserProfile, MemberProgress } from '../types';
 import { api } from '../api';
-import { FitnessAnalysisEngine } from '../aiService';
-import { Activity, LogOut, TrendingUp, Calendar, Home, Salad, Award, Droplet, BrainCircuit, Loader2, Info } from 'lucide-react';
+import { FitnessChatSession } from '../aiService';
+// Fix: Added missing import for assets used in the component
+import * as assets from '../assets';
+import { Activity, LogOut, TrendingUp, Calendar, Home, Salad, Award, Droplet, BrainCircuit, Loader2, Info, Sparkles } from 'lucide-react';
 
 const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
   const [history, setHistory] = useState<MemberProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'growth' | 'fuel' | 'billing'>('growth');
   const [profile, setProfile] = useState<UserProfile>(user);
+  const [aiInsight, setAiInsight] = useState<string>("INITIALIZING STRATEGIC BRIEFING...");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -20,11 +24,16 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
       setHistory(h);
       if (p) setProfile(p);
       setLoading(false);
+      
+      // Trigger AI Analysis
+      setIsAnalyzing(true);
+      const coach = new FitnessChatSession();
+      const insight = await coach.analyzeProgress(h);
+      setAiInsight(insight);
+      setIsAnalyzing(false);
     };
     fetchAll();
   }, [user.id]);
-
-  const coachInsight = useMemo(() => FitnessAnalysisEngine.analyzeProgress(history), [history]);
 
   return (
     <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 font-sans selection:bg-fuchsia-600 selection:text-white">
@@ -54,9 +63,16 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
           <div className="grid lg:grid-cols-3 gap-10 animate-fade-in">
              <div className="lg:col-span-2 space-y-8">
                 <div className="bg-fuchsia-950/20 border border-fuchsia-500/20 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden">
+                   <div className="absolute top-8 right-8">
+                      {isAnalyzing ? <Loader2 className="w-5 h-5 text-fuchsia-500 animate-spin" /> : <Sparkles className="w-5 h-5 text-fuchsia-500 animate-pulse" />}
+                   </div>
                    <BrainCircuit className="absolute -right-10 -top-10 w-48 h-48 opacity-[0.05]" />
-                   <h2 className="text-fuchsia-500 font-black uppercase text-[10px] tracking-widest mb-4">Coach Insight</h2>
-                   <p className="text-2xl font-black italic uppercase leading-relaxed">"{coachInsight}"</p>
+                   <h2 className="text-fuchsia-500 font-black uppercase text-[10px] tracking-widest mb-4 flex items-center gap-2">
+                     Coach Bolt Briefing {isAnalyzing && <span className="text-[8px] animate-pulse">(Analyzing Matrix...)</span>}
+                   </h2>
+                   <p className={`text-2xl font-black italic uppercase leading-relaxed transition-opacity duration-500 ${isAnalyzing ? 'opacity-30' : 'opacity-100'}`}>
+                     "{aiInsight}"
+                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-6">
                    <div className="bg-zinc-900/30 p-8 rounded-[2rem] border border-white/5 text-center">
@@ -75,7 +91,9 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
                 <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-8">
                    <h3 className="text-xl font-black italic uppercase mb-6">Matrix History</h3>
                    <div className="space-y-4">
-                      {history.map(log => (
+                      {history.length === 0 ? (
+                        <p className="text-center py-12 text-zinc-600 font-black uppercase text-[10px] tracking-widest">No Biometric Logs Detected</p>
+                      ) : history.map(log => (
                         <div key={log.id} className="flex items-center justify-between p-6 bg-black/40 rounded-2xl border border-white/5">
                            <div className="flex items-center gap-4">
                               <Calendar className="w-5 h-5 text-zinc-600" />
@@ -93,13 +111,15 @@ const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLo
              <div className="bg-zinc-900/30 border border-white/5 rounded-[3rem] p-10 h-fit">
                 <h3 className="text-[10px] font-black uppercase tracking-widest mb-8 text-zinc-500">Operative Specialist</h3>
                 <div className="flex items-center gap-4">
-                   <div className="w-16 h-16 rounded-2xl bg-[#020617] border border-white/5"></div>
+                   <div className="w-16 h-16 rounded-2xl bg-[#020617] border border-white/5 flex items-center justify-center">
+                      <img src={assets.ai_avatar} className="w-full h-full object-cover rounded-2xl opacity-50 grayscale hover:grayscale-0 transition-all" />
+                   </div>
                    <div>
                       <p className="font-black italic uppercase text-white">{profile.assignedCoachName}</p>
                       <p className="text-[9px] text-zinc-600 font-bold uppercase">Assigned Strategy Specialist</p>
                    </div>
                 </div>
-                <button className="w-full bg-white text-black py-4 mt-12 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl">Contact Specialist</button>
+                <button className="w-full bg-white text-black py-4 mt-12 rounded-full font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-zinc-200 transition-all">Contact Specialist</button>
              </div>
           </div>
         )}

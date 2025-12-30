@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, Loader2 } from 'lucide-react';
 import { createChatSession, FitnessChatSession } from '../aiService';
 import * as assets from '../assets';
 
@@ -37,18 +38,21 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ onRecommendation }) => {
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsTyping(true);
 
-    // Using local rule-based matching now
-    const response = await chatSessionRef.current.sendMessage(userMsg);
-    
-    setTimeout(() => {
+    try {
+      const response = await chatSessionRef.current.sendMessage(userMsg);
       setIsTyping(false);
       setMessages(prev => [...prev, { role: 'model', text: response }]);
       
-      // If a plan name is matched in our local engine, trigger recommendation
-      if (response.includes("PROTOCOL") || response.includes("LEVEL") || response.includes("PINNACLE")) {
-          onRecommendation(response); 
+      // Heuristic to trigger the "Free Pass" scroll if the AI sounds conclusive
+      const conclusiveKeywords = ["PROTOCOL", "LEVEL", "PINNACLE", "STARTER", "EXECUTIVE", "PERFORMANCE"];
+      if (conclusiveKeywords.some(k => response.toUpperCase().includes(k))) {
+          // Small delay for the user to read the message before we scroll
+          setTimeout(() => onRecommendation(`Recommended Protocol based on chat: ${response.substring(0, 100)}...`), 1500);
       }
-    }, 600); // Simulate local processing delay for better UX
+    } catch (e) {
+      setIsTyping(false);
+      setMessages(prev => [...prev, { role: 'model', text: "SYSTEM ERROR. RECALIBRATE INPUT." }]);
+    }
   };
 
   return (
@@ -73,7 +77,7 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ onRecommendation }) => {
                 <div className="relative z-10 hidden md:block">
                     <div className="flex items-center space-x-2 text-[9px] font-black uppercase tracking-widest text-slate-400">
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span>Core Online</span>
+                        <span>Core Online (Gemini 3)</span>
                     </div>
                 </div>
             </div>
@@ -90,12 +94,9 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ onRecommendation }) => {
                     ))}
                     {isTyping && (
                         <div className="flex justify-start">
-                            <div className="bg-slate-800 rounded-2xl rounded-bl-none px-5 py-4 border border-slate-700">
-                                <div className="flex space-x-1">
-                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce"></div>
-                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                                </div>
+                            <div className="bg-slate-800 rounded-2xl rounded-bl-none px-5 py-4 border border-slate-700 flex items-center gap-3">
+                                <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Thinking...</span>
                             </div>
                         </div>
                     )}
@@ -105,13 +106,14 @@ const AiAssistant: React.FC<AiAssistantProps> = ({ onRecommendation }) => {
                     <div className="relative flex items-center">
                         <input 
                            type="text" 
+                           disabled={isTyping}
                            value={input} 
                            onChange={(e) => setInput(e.target.value)} 
                            onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-                           placeholder="Describe your primary goal..." 
-                           className="w-full bg-slate-950 border border-slate-700 text-white rounded-full py-4 pl-6 pr-14 focus:outline-none focus:border-blue-500 transition-all font-bold text-xs" 
+                           placeholder={isTyping ? "Analyzing biological targets..." : "Describe your primary goal..."} 
+                           className="w-full bg-slate-950 border border-slate-700 text-white rounded-full py-4 pl-6 pr-14 focus:outline-none focus:border-blue-500 transition-all font-bold text-xs disabled:opacity-50" 
                         />
-                        <button onClick={handleSend} disabled={!input.trim()} className="absolute right-2 p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg"><Send className="w-5 h-5" /></button>
+                        <button onClick={handleSend} disabled={!input.trim() || isTyping} className="absolute right-2 p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg"><Send className="w-5 h-5" /></button>
                     </div>
                 </div>
             </div>

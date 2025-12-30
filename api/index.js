@@ -22,17 +22,18 @@ const DEFAULT_REF = "euuqfcglulkeyxaqcpvz";
 
 /**
  * PRODUCTION-READY CONNECTION LOGIC
- * This function ensures we use the Supavisor Pooler (Port 6543)
- * which is required for stable connections from Vercel/Serverless.
+ * Fixes "self-signed certificate" errors by enforcing SSL rejection bypass.
  */
 function getConnectionString() {
-  // 1. High Priority: Explicitly set Vercel Environment Variable
-  if (process.env.DATABASE_URL) {
-    console.log("[DB] Using DATABASE_URL from environment.");
-    return process.env.DATABASE_URL;
+  let url = process.env.DATABASE_URL;
+  
+  if (url) {
+    console.log("[DB] Found DATABASE_URL. Stripping conflicting sslmode params.");
+    // Remove any existing sslmode to prevent conflicts with dialectOptions
+    url = url.split('?')[0];
+    return `${url}?sslmode=require&supavisor_session=true`;
   }
   
-  // 2. Fallback: Manual Construction for the AWS West 1 Pooler
   const ref = DEFAULT_REF;
   const user = `postgres.${ref}`;
   const host = `aws-1-eu-west-1.pooler.supabase.com`;
@@ -40,25 +41,24 @@ function getConnectionString() {
   const db = "postgres";
   const params = "sslmode=require&supavisor_session=true";
 
-  console.log(`[DB] Using manual fallback to ${host}:${port}`);
   return `postgresql://${user}:${DB_PASSWORD}@${host}:${port}/${db}?${params}`;
 }
 
 const sequelize = new Sequelize(getConnectionString(), {
   dialect: 'postgres',
   dialectModule: pg,
-  logging: (msg) => console.log(`[SEQUELIZE] ${msg.substring(0, 100)}...`),
+  logging: false,
   dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false
+      rejectUnauthorized: false // CRITICAL: Fixes self-signed certificate error
     },
-    connectTimeout: 25000,
+    connectTimeout: 30000,
   },
   pool: {
-    max: 4,
+    max: 5,
     min: 0,
-    acquire: 40000,
+    acquire: 60000,
     idle: 10000
   }
 });
@@ -78,10 +78,13 @@ const Profile = sequelize.define('Profile', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   password: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.STRING, defaultValue: 'member' },
+  role: { type: DataTypes.STRING, defaultValue: 'member' }, // super_admin, member, testimonial
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
-  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' }
+  nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
+  quote: { type: DataTypes.TEXT }, // For testimonials
+  clientTitle: { type: DataTypes.STRING }, // For testimonials
+  rating: { type: DataTypes.INTEGER, defaultValue: 5 } // For testimonials
 }, { tableName: 'profiles', underscored: true, timestamps: true });
 
 const TrainingPlan = sequelize.define('TrainingPlan', {
@@ -113,23 +116,16 @@ app.get('/api/system/health', async (req, res) => {
     res.json({ 
       success: true, 
       status: 'operational', 
-      database: {
-        connected: true,
-        host: sequelize.config.host,
-        port: sequelize.config.port,
-        pooler: sequelize.config.port === 6543
-      }
+      db: sequelize.config.host
     });
   } catch (e) {
     res.status(503).json({ 
       success: false, 
       status: 'degraded', 
       error: e.message,
-      help: "Ensure Port 6543 is used in your Vercel DATABASE_URL.",
       diagnostic: {
         host: sequelize.config.host,
-        port: sequelize.config.port,
-        protocol: 'postgres'
+        port: sequelize.config.port
       }
     });
   }
@@ -138,11 +134,16 @@ app.get('/api/system/health', async (req, res) => {
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
     await sequelize.sync({ alter: true });
+    
     const hash = await bcrypt.hash('AdminPassword123!', 10);
+    
+    // 1. Create Admin
     await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
+
+    // 2. Create Plans
     if (await TrainingPlan.count() === 0) {
       await TrainingPlan.bulkCreate([
         { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
@@ -150,8 +151,36 @@ app.get('/api/system/bootstrap', async (req, res) => {
         { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] }
       ]);
     }
-    res.json({ success: true, message: 'Vault Core Synced.' });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+
+    // 3. Create Sample Testimonials (Solves the 404 in logs)
+    const testimonialCount = await Profile.count({ where: { role: 'testimonial' } });
+    if (testimonialCount === 0) {
+      await Profile.bulkCreate([
+        { name: 'Sarah Jenkins', email: 'sarah@exec.com', password: 'N/A', role: 'testimonial', clientTitle: 'Executive Director', quote: "The Elite Executive plan didn't just change my body; it changed my clarity at work. Absolute game-changer.", rating: 5 },
+        { name: 'Marcus V.', email: 'marcus@founder.com', password: 'N/A', role: 'testimonial', clientTitle: 'Tech Founder', quote: "Pinnacle coaching is the only way to train. The attention to detail in nutrition is surgical.", rating: 5 }
+      ]);
+    }
+
+    res.json({ success: true, message: 'Vault Infrastructure Synced & Seeded.' });
+  } catch (e) { 
+    res.status(500).json({ success: false, error: e.message }); 
+  }
+});
+
+// General Profile Route (Solves the 404 for testimonials and members)
+app.get('/api/profiles', async (req, res) => {
+  try {
+    const { role } = req.query;
+    const where = role ? { role } : {};
+    const profiles = await Profile.findAll({ 
+      where,
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
+    res.json({ success: true, data: profiles });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.post('/api/profiles/login', async (req, res) => {

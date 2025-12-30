@@ -5,7 +5,8 @@ import { Users, LogOut, RefreshCw, Activity, ShieldAlert, Plus, TrendingUp, Home
 // Fix imports to reference correct modules
 import { api } from './api';
 import { UserProfile, MemberProgress, Lead, FinancialHealthRecord } from './types';
-import { FitnessAnalysisEngine } from './aiService';
+// Fix: Renamed missing FitnessAnalysisEngine to FitnessChatSession
+import { FitnessChatSession } from './aiService';
 
 import { GoogleGenAI } from "@google/genai";
 
@@ -86,8 +87,18 @@ export const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile
 // --- MEMBER DASHBOARD ---
 export const MemberDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
   const [history, setHistory] = useState<MemberProgress[]>([]);
-  useEffect(() => { api.getMemberProgress(user.id).then(setHistory); }, [user.id]);
-  const insight = useMemo(() => FitnessAnalysisEngine.analyzeProgress(history), [history]);
+  // Fix: Replaced useMemo sync call with state and async useEffect trigger
+  const [insight, setInsight] = useState<string>("ANALYZING BIOMETRIC DATA...");
+
+  useEffect(() => { 
+    api.getMemberProgress(user.id).then(h => {
+      setHistory(h);
+      // Fix: Used FitnessChatSession which contains the analyzeProgress method
+      const session = new FitnessChatSession();
+      session.analyzeProgress(h).then(setInsight);
+    }); 
+  }, [user.id]);
+
   const latest = history[0];
   return (
     <div className="min-h-screen bg-[#020617] text-white p-12">
