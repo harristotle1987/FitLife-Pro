@@ -3,11 +3,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
 import { Lead, UserProfile, UserRole, AdminPermissions, MemberProgress, TrainingPlan } from '../types';
 import { FitnessChatSession } from '../aiService';
+import * as assets from '../assets';
 import { 
   Users, LogOut, RefreshCw, Activity, Menu, X, 
   Loader2, Sparkles, Home, Database, Sword, Terminal,
   LayoutDashboard, Layers, ShieldCheck, UserPlus, Plus, ShieldAlert, Phone, Settings, Briefcase, UserCog, Trash2, CheckSquare,
-  LineChart, PlusCircle, Save
+  LineChart, PlusCircle, Save, BrainCircuit, Calendar
 } from 'lucide-react';
 import { TRAINING_PLANS } from '../constants';
 
@@ -26,24 +27,24 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
 
-  // Manual Add Form State
+  // User State
   const [manualUser, setManualUser] = useState({ name: '', email: '', password: '', role: 'member' as UserRole, phone: '' });
   const [isCreatingManual, setIsCreatingManual] = useState(false);
   const [onboardingLeadId, setOnboardingLeadId] = useState<string | null>(null);
 
-  // Edit Assignment State
+  // Edit State
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [assignmentData, setAssignmentData] = useState<Partial<UserProfile>>({});
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Matrix Modal State
+  // Matrix State
   const [matrixMember, setMatrixMember] = useState<UserProfile | null>(null);
   const [matrixLogs, setMatrixLogs] = useState<MemberProgress[]>([]);
   const [newLog, setNewLog] = useState({ weight: '', body_fat: '', performance_score: '75', notes: '' });
   const [isSavingLog, setIsSavingLog] = useState(false);
 
-  // Plans State
+  // Plan State
   const [editingPlan, setEditingPlan] = useState<Partial<TrainingPlan> | null>(null);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   
@@ -68,8 +69,10 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
       setLeads(l || []);
       setMembers(m || []);
       setPlans(p || []);
-      const allStaff = [...(a || []), ...(sa || [])].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i);
-      setAdmins(allStaff);
+      
+      // Aggregate staff for the Squad view
+      const staffList = [...(a || []), ...(sa || [])].filter((v,i,a) => a.findIndex(t => (t.id === v.id)) === i);
+      setAdmins(staffList);
 
     } catch (err: any) { 
       setErrorHint(err.message || 'Vault infrastructure unresponsive.');
@@ -93,7 +96,13 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   };
 
   const handleOnboard = (lead: Lead) => {
-    setManualUser({ name: lead.name, email: lead.email, password: 'FitLife' + Math.floor(Math.random() * 9000 + 1000), role: 'member', phone: lead.phone });
+    setManualUser({ 
+      name: lead.name, 
+      email: lead.email, 
+      password: 'FitLife' + Math.floor(Math.random() * 9000 + 1000), 
+      role: 'member', 
+      phone: lead.phone 
+    });
     setOnboardingLeadId(lead.id || null);
     setShowManualAdd(true);
   };
@@ -152,15 +161,20 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   const handleOpenAssignment = (u: UserProfile) => {
     setEditingUser(u);
     setAssignmentData({
-      assignedCoachId: u.assignedCoachId,
-      assignedCoachName: u.assignedCoachName,
-      activePlanId: u.activePlanId,
+      assignedCoachId: u.assignedCoachId || '',
+      assignedCoachName: u.assignedCoachName || '',
+      activePlanId: u.activePlanId || 'plan_starter',
       role: u.role,
-      assignedNutritionistName: u.assignedNutritionistName,
-      name: u.name,
-      phone: u.phone,
-      email: u.email,
-      permissions: u.permissions || {}
+      name: u.name || '',
+      phone: u.phone || '',
+      email: u.email || '',
+      permissions: u.permissions || {
+        canManageLeads: false,
+        canManageProgress: false,
+        canManageAdmins: false,
+        canManagePlans: false,
+        canManageNutrition: false
+      }
     });
   };
 
@@ -185,7 +199,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
 
   const handleDeleteUser = async () => {
     if (!editingUser) return;
-    if (!confirm(`WARNING: Terminate ${editingUser.name}'s profile?`)) return;
+    if (!confirm(`WARNING: Remove athlete ${editingUser.name} from the system? This action is permanent.`)) return;
     setIsDeleting(true);
     try {
       const res = await api.deleteProfile(editingUser.id);
@@ -215,19 +229,17 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
   };
 
   const togglePermission = (key: keyof AdminPermissions) => {
-    const current = assignmentData.permissions || {};
+    const current = assignmentData.permissions || {
+      canManageLeads: false,
+      canManageProgress: false,
+      canManageAdmins: false,
+      canManagePlans: false,
+      canManageNutrition: false
+    };
     setAssignmentData({
       ...assignmentData,
       permissions: { ...current, [key]: !current[key] }
     });
-  };
-
-  const handleBootstrap = async () => {
-    setIsBootstrapping(true);
-    try {
-      const ok = await api.bootstrapDatabase();
-      if (ok) { loadAll(); alert("Infrastructure Synced."); }
-    } finally { setIsBootstrapping(false); }
   };
 
   const navItems = [
@@ -278,7 +290,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         <div className="mt-auto pt-6 border-t border-white/5">
            <button onClick={() => handleOpenAssignment(user)} className="w-full flex items-center justify-start gap-3 mb-4 text-zinc-400 hover:text-white transition-colors">
               <UserCog className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Edit My Profile</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">My Account</span>
            </button>
            <button onClick={onLogout} className="w-full flex items-center justify-center gap-3 bg-zinc-900 border border-white/5 text-zinc-500 hover:text-red-400 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all">
             <LogOut className="w-4 h-4" /> Sign Out
@@ -297,9 +309,14 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
              <h1 className="text-5xl md:text-7xl font-black text-white uppercase italic tracking-tighter leading-none">{activeTab}</h1>
           </div>
           <div className="flex gap-4">
-             {activeTab === 'protocols' && (
-                <button onClick={() => setEditingPlan({ name: '', price: 99, description: '', features: [] })} className="bg-fuchsia-600 px-8 py-4 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl shadow-fuchsia-600/20">
-                  <Plus className="w-4 h-4" /> New Protocol
+             {activeTab === 'staff' && (
+                <button onClick={() => { setManualUser({...manualUser, role: 'admin'}); setShowManualAdd(true); }} className="bg-fuchsia-600 px-8 py-4 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl shadow-fuchsia-600/20">
+                  <ShieldCheck className="w-4 h-4" /> Add Operator
+                </button>
+             )}
+             {activeTab === 'members' && (
+                <button onClick={() => { setManualUser({...manualUser, role: 'member'}); setShowManualAdd(true); }} className="bg-white text-black px-8 py-4 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-3 hover:bg-zinc-200 transition-all shadow-xl shadow-white/10">
+                  <UserPlus className="w-4 h-4" /> Add Athlete
                 </button>
              )}
              <button onClick={loadAll} className="p-5 bg-zinc-900 border border-white/5 rounded-full hover:border-fuchsia-500 transition-all">
@@ -311,7 +328,9 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         <div className="animate-fade-in">
           {activeTab === 'leads' && (
             <div className="space-y-6">
-              {leads.map(lead => (
+              {leads.length === 0 ? (
+                <div className="text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Intake Leads</div>
+              ) : leads.map(lead => (
                 <div key={lead.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem] flex flex-col gap-8">
                   <div className="flex justify-between items-center">
                     <div>
@@ -337,18 +356,43 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
 
           {activeTab === 'members' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {members.map(m => (
-                <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all">
+              {members.length === 0 ? (
+                <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Active Athletes in Matrix</div>
+              ) : members.map(m => (
+                <div key={m.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
                   <h3 className="text-xl font-black italic uppercase text-white mb-2">{m.name}</h3>
-                  <p className="text-[9px] text-fuchsia-500 font-black uppercase mb-8">{m.activePlanId}</p>
-                  <div className="flex flex-col gap-2">
+                  <p className="text-[9px] text-fuchsia-500 font-black uppercase mb-8">{m.activePlanId?.replace('plan_', '').toUpperCase()}</p>
+                  <div className="mt-auto flex flex-col gap-2">
                     <button onClick={() => handleOpenMatrix(m)} className="w-full bg-white/5 border border-white/5 text-white py-4 rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                      <LineChart className="w-3 h-3" /> Synchronize Matrix
+                      <LineChart className="w-3 h-3" /> Matrix Sync
                     </button>
-                    <button onClick={() => handleOpenAssignment(m)} className="w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2">
+                    <button onClick={() => handleOpenAssignment(m)} className="w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
                       <Settings className="w-3 h-3" /> Edit Profile
                     </button>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'staff' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {admins.length === 0 ? (
+                <div className="col-span-full text-center py-20 text-zinc-700 font-black uppercase italic tracking-widest">No Staff Operators in Squad</div>
+              ) : admins.map(staff => (
+                <div key={staff.id} className="bg-zinc-900/30 border border-white/5 p-10 rounded-[3rem] group hover:border-fuchsia-500/30 transition-all flex flex-col">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="p-3 bg-fuchsia-600/10 rounded-2xl border border-fuchsia-500/20">
+                      <ShieldCheck className="w-6 h-6 text-fuchsia-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black italic uppercase text-white">{staff.name}</h3>
+                      <p className="text-[9px] text-fuchsia-500 font-black uppercase">{staff.role.replace('_', ' ')}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => handleOpenAssignment(staff)} className="mt-auto w-full bg-zinc-800 border border-white/5 text-zinc-400 py-4 rounded-2xl text-[9px] font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-700 hover:text-white transition-all">
+                    <UserCog className="w-3 h-3" /> Edit Assignment
+                  </button>
                 </div>
               ))}
             </div>
@@ -382,18 +426,18 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </div>
       </main>
 
-      {/* Manual Add / Onboarding Modal */}
+      {/* Manual Add Modal */}
       {showManualAdd && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[200] flex items-center justify-center p-8 animate-fade-in">
-           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-md relative">
+           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-md relative shadow-2xl">
               <button onClick={() => setShowManualAdd(false)} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors"><X className="w-8 h-8" /></button>
-              <h2 className="text-3xl font-black italic uppercase text-white mb-8">Deploy Athlete Profile</h2>
+              <h2 className="text-3xl font-black italic uppercase text-white mb-8">Deploy {manualUser.role === 'admin' ? 'Operator' : 'Athlete'}</h2>
               <form onSubmit={handleManualAdd} className="space-y-4">
-                 <input required placeholder="Name" className="w-full bg-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.name} onChange={e => setManualUser({...manualUser, name: e.target.value})} />
-                 <input required type="email" placeholder="Email" className="w-full bg-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.email} onChange={e => setManualUser({...manualUser, email: e.target.value})} />
-                 <input required placeholder="Initial Key" className="w-full bg-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.password} onChange={e => setManualUser({...manualUser, password: e.target.value})} />
+                 <input required placeholder="Full Name" className="w-full bg-white/5 border border-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.name} onChange={e => setManualUser({...manualUser, name: e.target.value})} />
+                 <input required type="email" placeholder="Email Address" className="w-full bg-white/5 border border-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.email} onChange={e => setManualUser({...manualUser, email: e.target.value})} />
+                 <input required placeholder="Initial Vault Key" className="w-full bg-white/5 border border-white/5 p-5 rounded-2xl font-bold text-sm" value={manualUser.password} onChange={e => setManualUser({...manualUser, password: e.target.value})} />
                  <button disabled={isCreatingManual} className="w-full bg-white text-black py-6 rounded-full font-black uppercase text-[10px] tracking-widest mt-6">
-                    {isCreatingManual ? <Loader2 className="animate-spin" /> : "Finalize Ingest"}
+                    {isCreatingManual ? <Loader2 className="animate-spin" /> : "Authorize Deployment"}
                  </button>
               </form>
            </div>
@@ -431,7 +475,9 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
 
             <div className="flex-1 space-y-4">
                <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-4">Historical Feed</h3>
-               {matrixLogs.map((log, i) => (
+               {matrixLogs.length === 0 ? (
+                 <p className="text-center py-20 text-zinc-700 font-black uppercase text-[10px]">No Matrix History</p>
+               ) : matrixLogs.map((log, i) => (
                  <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-3xl flex justify-between items-center group">
                     <div>
                       <p className="text-[9px] font-black uppercase text-zinc-600 mb-1">{new Date(log.date).toLocaleDateString()}</p>
@@ -443,20 +489,113 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
                     </div>
                  </div>
                ))}
-               {matrixLogs.length === 0 && <p className="text-center py-20 text-zinc-700 font-black uppercase text-[10px]">No Matrix History</p>}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[250] flex items-center justify-center p-8 animate-fade-in">
+           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-lg relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <button onClick={() => setEditingUser(null)} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors"><X className="w-8 h-8" /></button>
+              
+              <div className="mb-8">
+                 <h2 className="text-3xl font-black italic uppercase text-white mb-2">Authority Control</h2>
+                 <p className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em]">{editingUser.name}</p>
+                 <p className="text-[9px] font-bold text-zinc-600 mt-1">{editingUser.email}</p>
+              </div>
+
+              <form onSubmit={handleSaveAssignment} className="space-y-6">
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest">Full Name</label>
+                   <input className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white outline-none" value={assignmentData.name || ''} onChange={e => setAssignmentData({...assignmentData, name: e.target.value})} />
+                </div>
+                
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest">Phone</label>
+                   <input className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white outline-none" value={assignmentData.phone || ''} onChange={e => setAssignmentData({...assignmentData, phone: e.target.value})} />
+                </div>
+
+                {user.role === 'super_admin' && (
+                   <div className="space-y-2">
+                       <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><ShieldCheck className="w-3 h-3" /> System Role</label>
+                       <select className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white outline-none appearance-none" value={assignmentData.role || 'member'} onChange={e => setAssignmentData({...assignmentData, role: e.target.value as UserRole})}>
+                         <option value="member" className="bg-zinc-900">Member (Athlete)</option>
+                         <option value="admin" className="bg-zinc-900">Admin (Coach)</option>
+                         <option value="super_admin" className="bg-zinc-900">Super Admin</option>
+                         <option value="nutritionist" className="bg-zinc-900">Nutritionist</option>
+                       </select>
+                   </div>
+                )}
+
+                {assignmentData.role === 'member' && (
+                  <>
+                    <div className="space-y-2">
+                       <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><Briefcase className="w-3 h-3" /> Assigned Coach</label>
+                       <select className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white outline-none appearance-none" value={assignmentData.assignedCoachId || ''} onChange={e => {
+                          const coach = admins.find(a => a.id === e.target.value);
+                          setAssignmentData({ ...assignmentData, assignedCoachId: e.target.value, assignedCoachName: coach ? coach.name : '' });
+                       }}>
+                         <option value="" className="bg-zinc-900 text-zinc-500">Unassigned</option>
+                         {admins.map(admin => <option key={admin.id} value={admin.id} className="bg-zinc-900">{admin.name}</option>)}
+                       </select>
+                    </div>
+
+                    <div className="space-y-2">
+                       <label className="text-[9px] font-black uppercase text-zinc-500 ml-4 tracking-widest flex items-center gap-2"><Layers className="w-3 h-3" /> Active Protocol</label>
+                       <select className="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-sm font-bold text-white outline-none appearance-none" value={assignmentData.activePlanId || ''} onChange={e => setAssignmentData({...assignmentData, activePlanId: e.target.value})}>
+                         {plans.map(plan => <option key={plan.id} value={plan.id} className="bg-zinc-900">{plan.name}</option>)}
+                       </select>
+                    </div>
+                  </>
+                )}
+
+                {(assignmentData.role === 'admin' || assignmentData.role === 'nutritionist') && user.role === 'super_admin' && (
+                   <div className="space-y-4 pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2">
+                         <ShieldAlert className="w-4 h-4 text-fuchsia-500" />
+                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Privilege Escalation (Super Admin)</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                         {(Object.keys(PERMISSION_LABELS) as Array<keyof AdminPermissions>).map((key) => (
+                           <label key={key} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors">
+                              <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                                assignmentData.permissions?.[key] ? 'bg-fuchsia-600 border-fuchsia-600 text-white' : 'border-zinc-700 bg-zinc-900'
+                              }`}>
+                                {assignmentData.permissions?.[key] && <CheckSquare className="w-3 h-3" />}
+                                <input type="checkbox" className="hidden" checked={!!assignmentData.permissions?.[key]} onChange={() => togglePermission(key)} />
+                              </div>
+                              <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">{PERMISSION_LABELS[key]}</span>
+                           </label>
+                         ))}
+                      </div>
+                   </div>
+                )}
+
+                <div className="pt-6 flex gap-4">
+                   {user.role === 'super_admin' && editingUser.id !== user.id && (
+                     <button type="button" disabled={isDeleting} onClick={handleDeleteUser} className="px-6 bg-red-600/10 border border-red-600/30 text-red-500 py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-red-600 hover:text-white transition-all disabled:opacity-50">
+                       {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                     </button>
+                   )}
+                   <button disabled={isSavingAssignment} type="submit" className="flex-1 bg-fuchsia-600 text-white py-5 rounded-full font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-fuchsia-500 transition-all shadow-xl">
+                      {isSavingAssignment ? <Loader2 className="w-4 h-4 animate-spin" /> : "Commit Authority"}
+                    </button>
+                </div>
+              </form>
+           </div>
         </div>
       )}
 
       {/* Plan Editor Modal */}
       {editingPlan && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[250] flex items-center justify-center p-8 animate-fade-in">
-           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-lg relative">
+           <div className="bg-[#020617] border border-white/10 rounded-[3rem] p-12 w-full max-w-lg relative shadow-2xl">
               <button onClick={() => setEditingPlan(null)} className="absolute top-8 right-8 text-zinc-500"><X className="w-8 h-8" /></button>
               <h2 className="text-3xl font-black italic uppercase text-white mb-8">{editingPlan.id ? 'Edit Protocol' : 'Deploy Protocol'}</h2>
               <form onSubmit={handleSavePlan} className="space-y-6">
-                 <input required placeholder="Plan Identifier (e.g. plan_elite)" disabled={!!editingPlan.id} className="w-full bg-white/5 p-5 rounded-2xl" value={editingPlan.id || ''} onChange={e => setEditingPlan({...editingPlan, id: e.target.value})} />
+                 <input required placeholder="Plan Identifier" disabled={!!editingPlan.id} className="w-full bg-white/5 p-5 rounded-2xl" value={editingPlan.id || ''} onChange={e => setEditingPlan({...editingPlan, id: e.target.value})} />
                  <input required placeholder="Display Name" className="w-full bg-white/5 p-5 rounded-2xl" value={editingPlan.name || ''} onChange={e => setEditingPlan({...editingPlan, name: e.target.value})} />
                  <input required type="number" placeholder="Price ($)" className="w-full bg-white/5 p-5 rounded-2xl" value={editingPlan.price || ''} onChange={e => setEditingPlan({...editingPlan, price: parseFloat(e.target.value)})} />
                  <textarea required placeholder="Description" className="w-full bg-white/5 p-5 rounded-2xl h-24" value={editingPlan.description || ''} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} />
