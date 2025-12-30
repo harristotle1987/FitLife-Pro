@@ -21,30 +21,29 @@ const fetchSafe = async (url: string, options: any = {}) => {
     try {
       json = text ? JSON.parse(text) : {};
     } catch (e) {
-      // Handle the case where the server returns HTML (like a Vercel 500 page)
+      // If it's not JSON, it might be a Vercel HTML error page
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `Server Error (Status ${res.status}): The backend returned an invalid response. This often happens during cold starts or if the database is unreachable.` 
+          message: `The server returned an unexpected response (Status ${res.status}). This usually indicates a temporary connection issue between Vercel and Supabase. Please try again in a few seconds.` 
         }) 
       };
     }
 
-    // If the server returned an error status but valid JSON
     if (!res.ok) {
       json.success = false;
-      json.message = json.message || `Request failed with status ${res.status}`;
+      json.message = json.message || `API Error: ${res.status}`;
     }
 
     return { ok: res.ok, json: () => Promise.resolve(json) };
   } catch (e: any) {
-    console.error(`[VAULT CONNECTION ERROR] @ ${url}:`, e);
+    console.error(`[API CONNECTION ERROR] @ ${url}:`, e);
     return { 
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: `Network error: ${e.message || 'Connection to backend failed.'}` 
+        message: `Network failure: ${e.message || 'Cannot reach server.'}` 
       }) 
     };
   }
@@ -101,11 +100,6 @@ export const api = {
     const json = await res.json();
     return json.success ? json.data : [];
   },
-  getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
-    const res = await fetchSafe(`${API_BASE}/profiles/financial-health`);
-    const json = await res.json();
-    return json.success ? json.data : [];
-  },
   getMemberProgress: async (memberId: string): Promise<MemberProgress[]> => {
     const res = await fetchSafe(`${API_BASE}/progress?member_id=${memberId}`);
     const json = await res.json();
@@ -118,6 +112,12 @@ export const api = {
   createProfile: async (data: any) => {
     const res = await fetchSafe(`${API_BASE}/profiles/signup`, { method: 'POST', body: JSON.stringify(data) });
     return res.json();
+  },
+  // Added getFinancialHealth to fix AdminDashboard.tsx error
+  getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
+    const res = await fetchSafe(`${API_BASE}/finance`);
+    const json = await res.json();
+    return json.success ? json.data : [];
   },
   createCheckoutSession: async (planId: string, email: string): Promise<string | null> => {
     const res = await fetchSafe(`${API_BASE}/stripe/create-checkout`, { method: 'POST', body: JSON.stringify({ planId, email }) });

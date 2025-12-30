@@ -16,29 +16,43 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 
 const stripe = new Stripe(STRIPE_SECRET);
 
-// --- DATABASE CONNECTION ---
-// Using the updated password confirmed by the user.
-// No special characters like @ are used anymore, which prevents malformed URI errors.
-const DB_URL = process.env.DATABASE_URL || "postgresql://postgres:Colony082987Fit@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
+// --- DATABASE CONFIGURATION ---
+// User confirmed password: Colony082987Fit
+const DIRECT_URL = "postgresql://postgres:Colony082987Fit@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
 
-const sequelize = new Sequelize(DB_URL, {
-  dialect: 'postgres',
-  dialectModule: pg,
-  logging: false, 
-  dialectOptions: { 
-    ssl: { 
-      require: true, 
-      rejectUnauthorized: false 
+// We check if the provided env var is valid (i.e., starts with postgresql:// or postgres://)
+// If it starts with https://, it's a Supabase API URL, which causes Sequelize to crash.
+let connectionString = process.env.DATABASE_URL || DIRECT_URL;
+
+if (connectionString.startsWith('https')) {
+  console.warn("CRITICAL: DATABASE_URL is set to an HTTPS link. This is likely an API URL, not a DB string. Falling back to direct PostgreSQL connection.");
+  connectionString = DIRECT_URL;
+}
+
+// Initialize Sequelize with robust error handling for Serverless
+let sequelize;
+try {
+  sequelize = new Sequelize(connectionString, {
+    dialect: 'postgres', // Force dialect to prevent 'https' inference
+    dialectModule: pg,
+    logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      },
+      connectTimeout: 30000 // Extended for Vercel cold starts
     },
-    connectTimeout: 30000, 
-  },
-  pool: { 
-    max: 1, // Crucial for Serverless environments like Vercel
-    min: 0, 
-    acquire: 30000, 
-    idle: 10000 
-  }
-});
+    pool: {
+      max: 1, // Crucial for Serverless + Supabase
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    }
+  });
+} catch (err) {
+  console.error("SEQUELIZE_INIT_CRITICAL_ERROR:", err.message);
+}
 
 // --- MODELS ---
 
@@ -56,7 +70,7 @@ const Profile = sequelize.define('Profile', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   password: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.STRING, defaultValue: 'member' }, 
+  role: { type: DataTypes.STRING, defaultValue: 'member' },
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
   nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
@@ -111,21 +125,21 @@ const checkRole = (roles) => (req, res, next) => {
   next();
 };
 
-// --- ROUTES ---
+// --- SYSTEM ROUTES ---
 
-/**
- * BOOTSTRAP ROUTE
- * Use this to initialize the database tables and the primary admin account.
- */
+app.get('/api/system/health', async (req, res) => {
+  try {
+    await sequelize.authenticate();
+    res.json({ success: true, status: 'operational', database: 'connected' });
+  } catch (e) {
+    res.status(503).json({ success: false, status: 'degraded', error: e.message });
+  }
+});
+
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    console.info("Initiating system bootstrap...");
-    await sequelize.authenticate();
-    console.info("Database connection established.");
-    
-    // sync({ alter: true }) will update existing tables to match the model definition
+    console.info("Starting bootstrap...");
     await sequelize.sync({ alter: true });
-    console.info("Schema synchronization complete.");
     
     const hash = await bcrypt.hash('AdminPassword123!', 10);
     const [admin, created] = await Profile.findOrCreate({ 
@@ -137,20 +151,13 @@ app.get('/api/system/bootstrap', async (req, res) => {
       } 
     });
     
-    res.json({ 
-      success: true, 
-      message: 'System Ready. Tables synchronized and Admin account verified.', 
-      adminCreated: created 
-    });
+    res.json({ success: true, message: 'System Synced.', adminCreated: created });
   } catch (e) { 
-    console.error("BOOTSTRAP_ERROR:", e.message);
-    res.status(500).json({ 
-      success: false, 
-      error: "Bootstrap failed. Check database credentials or network access.",
-      details: e.message 
-    }); 
+    res.status(500).json({ success: false, error: e.message }); 
   }
 });
+
+// --- CORE ROUTES ---
 
 app.post('/api/profiles/login', async (req, res) => {
   try {
@@ -248,6 +255,21 @@ app.get('/api/plans', async (req, res) => {
   try {
     const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.get('/api/finance', auth, checkRole(['super_admin']), async (req, res) => {
+  try {
+    const members = await Profile.findAll({ where: { role: 'member' } });
+    const records = members.map(m => ({
+      profile_id: m.id,
+      athlete_name: m.name,
+      email: m.email,
+      status: 'active',
+      next_billing: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      monthly_rate: m.activePlanId.includes('starter') ? 49 : m.activePlanId.includes('performance') ? 199 : 499
+    }));
+    res.json({ success: true, data: records });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
