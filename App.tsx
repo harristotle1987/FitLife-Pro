@@ -16,8 +16,8 @@ const App = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      // Check for token existence to avoid unnecessary loading states for new visitors
       const token = localStorage.getItem('fitlife_vault_key_2024');
+      
       if (!token) {
         setLoading(false);
         return;
@@ -27,22 +27,22 @@ const App = () => {
         const currentUser = await api.getCurrentUser();
         if (currentUser) {
           setUser(currentUser);
-          // We land on 'home' by default to ensure the landing page is accessible.
-          // Users can navigate to their dashboard via the 'Vault'/'Dashboard' button in the Navbar.
         }
       } catch (err) {
-        console.error("Auth check failed:", err);
+        console.error("Critical Auth Sync Failure:", err);
       } finally {
+        // Ensure app becomes interactive regardless of auth success/fail
         setLoading(false);
       }
     };
+    
     checkAuth();
   }, []);
 
   const handleLoginSuccess = (profile: UserProfile) => {
     setUser(profile);
     setShowLogin(false);
-    // After a fresh login, take them directly to their operational dashboard
+    // Redirect to relevant operative environment
     if (profile.role === 'member') {
       setView('member');
     } else {
@@ -58,14 +58,15 @@ const App = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center gap-6">
         <Loader2 className="w-12 h-12 text-fuchsia-600 animate-spin" />
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-zinc-600">Syncing Growth Matrix...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#020617]">
+    <div className="min-h-screen bg-[#020617] text-white">
       {view === 'home' && (
         <HomePage 
           onLoginMember={() => user ? (user.role === 'member' ? setView('member') : setView('admin')) : setShowLogin(true)} 
