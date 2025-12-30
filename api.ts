@@ -16,14 +16,13 @@ const fetchSafe = async (url: string, options: any = {}) => {
   try {
     const res = await fetch(url, { ...options, headers });
     
-    // Handle 503 Service Unavailable (usually when DB is down/paused)
     if (res.status === 503) {
       const errJson = await res.json();
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `The database is currently unreachable. ${errJson.hint || 'Check if your Supabase project is paused.'}` 
+          message: `DNS Resolution failed for host ${errJson.diagnostic?.attempted_host || ''}. ${errJson.hint || ''}` 
         }) 
       };
     }
@@ -132,5 +131,10 @@ export const api = {
     const res = await fetchSafe(`${API_BASE}/stripe/create-checkout`, { method: 'POST', body: JSON.stringify({ planId, email }) });
     const json = await res.json();
     return json.success ? json.url : null;
+  },
+  bootstrapDatabase: async (): Promise<boolean> => {
+    const res = await fetchSafe(`${API_BASE}/system/bootstrap`);
+    const json = await res.json();
+    return json.success === true;
   }
 };

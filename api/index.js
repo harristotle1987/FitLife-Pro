@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
+import dns from 'dns';
 
 dotenv.config();
 
@@ -22,39 +23,32 @@ const FALLBACK_REF = "euuqfcglulkeyxaqcpvz";
 
 function getSanitizedConnectionString() {
   const envUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+  let ref = FALLBACK_REF;
   
-  if (envUrl.startsWith('postgres://') || envUrl.startsWith('postgresql://')) {
-    return envUrl;
+  if (envUrl.includes('.supabase.')) {
+    const match = envUrl.match(/db\.([^.]+)\.supabase/) || envUrl.match(/https:\/\/([^.]+)\.supabase/);
+    if (match && match[1]) ref = match[1];
   }
 
-  if (envUrl.startsWith('https://')) {
-    const match = envUrl.match(/https:\/\/([^.]+)\.supabase/);
-    const ref = (match && match[1]) ? match[1] : FALLBACK_REF;
-    return `postgresql://postgres:${DB_PASSWORD}@db.${ref}.supabase.co:5432/postgres`;
-  }
+  // Mandatory Supavisor format for Vercel/Serverless reliability
+  const user = `postgres.${ref}`;
+  const host = `db.${ref}.supabase.co`;
+  const port = 6543; 
+  const db = "postgres";
+  const params = "sslmode=require&supavisor_session=true";
 
-  return `postgresql://postgres:${DB_PASSWORD}@db.${FALLBACK_REF}.supabase.co:5432/postgres`;
+  return `postgresql://${user}:${DB_PASSWORD}@${host}:${port}/${db}?${params}`;
 }
 
-const connectionString = getSanitizedConnectionString();
-
-const sequelize = new Sequelize(connectionString, {
+const sequelize = new Sequelize(getSanitizedConnectionString(), {
   dialect: 'postgres',
   dialectModule: pg,
   logging: false,
   dialectOptions: {
-    ssl: {
-      require: true,
-      rejectUnauthorized: false
-    },
-    connectTimeout: 60000,
+    ssl: { require: true, rejectUnauthorized: false },
+    connectTimeout: 30000,
   },
-  pool: {
-    max: 1,
-    min: 0,
-    acquire: 60000,
-    idle: 10000
-  }
+  pool: { max: 1, min: 0, acquire: 30000, idle: 10000 }
 });
 
 // --- MODELS ---
@@ -97,7 +91,6 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   description: DataTypes.TEXT,
   features: { type: DataTypes.JSONB, defaultValue: [] },
   durationWeeks: { type: DataTypes.INTEGER },
-  recommendedFor: { type: DataTypes.JSONB, defaultValue: [] },
   stripePriceId: { type: DataTypes.STRING }
 }, { tableName: 'plans', underscored: true, timestamps: true });
 
@@ -119,18 +112,14 @@ const checkRole = (roles) => (req, res, next) => {
   next();
 };
 
-// --- SYSTEM & SEED ROUTES ---
+// --- ROUTES ---
 
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ success: true, status: 'operational', database: 'connected' });
+    res.json({ success: true, status: 'operational', database: 'connected', user: sequelize.config.username });
   } catch (e) {
-    let hint = "Check if the Supabase project is 'Paused' in the Supabase Dashboard.";
-    if (e.message.includes('ENOTFOUND')) {
-      hint = "DNS Resolution failed. This almost always means the project is Paused or Inactive in Supabase.";
-    }
-    res.status(503).json({ success: false, status: 'degraded', error: e.message, hint });
+    res.status(503).json({ success: false, status: 'degraded', error: e.message, user: sequelize.config.username });
   }
 });
 
@@ -138,168 +127,79 @@ app.get('/api/system/bootstrap', async (req, res) => {
   try {
     await sequelize.sync({ alter: true });
     const hash = await bcrypt.hash('AdminPassword123!', 10);
-    const [admin, created] = await Profile.findOrCreate({ 
+    await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
-
-    // Seed default plans if they don't exist
-    const plansCount = await TrainingPlan.count();
-    if (plansCount === 0) {
+    if (await TrainingPlan.count() === 0) {
       await TrainingPlan.bulkCreate([
         { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
         { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'Rapid transformation.', features: ['Custom Programming', 'Direct Messaging'] },
-        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] },
-        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'Bespoke lifestyle engineering.', features: ['VIP Access', 'Bloodwork Coordination'] }
+        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] }
       ]);
     }
-
-    res.json({ success: true, message: 'Schema Synced and Seeded.', adminCreated: created });
-  } catch (e) { 
-    res.status(500).json({ success: false, error: e.message }); 
-  }
+    res.json({ success: true, message: 'Vault Core Synced.' });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// --- PROFILE ROUTES ---
-
-app.post('/api/profiles/login', async (req, res) => {
-  try {
-    const p = await Profile.findOne({ where: { email: req.body.email } });
-    if (p && await bcrypt.compare(req.body.password, p.password)) {
-      const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-      res.json({ success: true, data: p, token });
-    } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/profiles/signup', async (req, res) => {
-  try {
-    const { name, email, password, role, activePlanId } = req.body;
-    const existing = await Profile.findOne({ where: { email } });
-    if (existing) return res.status(409).json({ success: false, message: 'Email registered.' });
-    const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
-    const p = await Profile.create({ name, email, password: hash, role: role || 'member', activePlanId: activePlanId || 'plan_starter' });
-    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
-    res.status(201).json({ success: true, data: p, token });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
+// Profiles
 app.get('/api/profiles/me', auth, async (req, res) => {
+  const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
+  res.json({ success: true, data: p });
+});
+
+app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin', 'nutritionist']), async (req, res) => {
   try {
-    const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
+    const p = await Profile.findByPk(req.params.id);
+    if (!p) return res.status(404).json({ success: false, message: 'Not found' });
+    await p.update(req.body);
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.get('/api/profiles', auth, async (req, res) => {
-  try {
-    const { role } = req.query;
-    const filter = role ? { where: { role } } : {};
-    const profiles = await Profile.findAll({ ...filter, attributes: { exclude: ['password'] } });
-    res.json({ success: true, data: profiles });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  const { role } = req.query;
+  const filter = role ? { where: { role } } : {};
+  const data = await Profile.findAll({ ...filter, attributes: { exclude: ['password'] } });
+  res.json({ success: true, data });
 });
 
-app.patch('/api/profiles/:id', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
-  try {
-    await Profile.update(req.body, { where: { id: req.params.id } });
-    res.json({ success: true, message: 'Profile Updated' });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-// --- LEAD ROUTES ---
-
-app.post('/api/leads', async (req, res) => {
-  try {
-    const lead = await Lead.create(req.body);
-    res.status(201).json({ success: true, data: lead });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
-  try {
-    const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
-    res.json({ success: true, data: l });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.patch('/api/leads/:id', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
-  try {
-    await Lead.update(req.body, { where: { id: req.params.id } });
-    res.json({ success: true, message: 'Lead Updated' });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-// --- PROGRESS ROUTES ---
-
-app.get('/api/progress', auth, async (req, res) => {
-  try {
-    const { member_id } = req.query;
-    // Members can only see their own progress unless requester is admin
-    const targetId = (req.user.role === 'member') ? req.user.id : member_id;
-    if (!targetId) return res.status(400).json({ success: false, message: 'Member ID required' });
-    
-    const logs = await Progress.findAll({ 
-      where: { memberId: targetId }, 
-      order: [['date', 'DESC']] 
-    });
-    res.json({ success: true, data: logs });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.post('/api/progress', auth, checkRole(['super_admin', 'admin', 'coach']), async (req, res) => {
-  try {
-    const { member_id, weight, body_fat, performance_score } = req.body;
-    const log = await Progress.create({
-      memberId: member_id,
-      coachId: req.user.id,
-      weight,
-      bodyFat: body_fat,
-      performanceScore: performance_score
-    });
-    res.status(201).json({ success: true, data: log });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-// --- UTILITY ROUTES ---
-
+// Plans
 app.get('/api/plans', async (req, res) => {
-  try {
-    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
-    res.json({ success: true, data: p });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
+  res.json({ success: true, data: p });
 });
 
+app.post('/api/plans', auth, checkRole(['super_admin']), async (req, res) => {
+  const p = await TrainingPlan.create(req.body);
+  res.json({ success: true, data: p });
+});
+
+// Finance
 app.get('/api/finance', auth, checkRole(['super_admin']), async (req, res) => {
-  // Simple mock of financial data based on active plans
-  try {
-    const members = await Profile.findAll({ where: { role: 'member' } });
-    const plans = await TrainingPlan.findAll();
-    const records = members.map(m => {
-      const plan = plans.find(p => p.id === m.activePlanId);
-      return {
-        profile_id: m.id,
-        athlete_name: m.name,
-        email: m.email,
-        status: 'active',
-        next_billing: new Date(Date.now() + 2592000000).toISOString(),
-        monthly_rate: plan ? parseFloat(plan.price) : 0
-      };
-    });
-    res.json({ success: true, data: records });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  const members = await Profile.findAll({ where: { role: 'member' } });
+  const plans = await TrainingPlan.findAll();
+  const records = members.map(m => {
+    const plan = plans.find(p => p.id === m.activePlanId);
+    return { athlete_name: m.name, email: m.email, status: 'active', monthly_rate: plan ? parseFloat(plan.price) : 0 };
+  });
+  res.json({ success: true, data: records });
 });
 
-app.post('/api/stripe/create-checkout', async (req, res) => {
-  try {
-    const { planId } = req.body;
-    const plan = await TrainingPlan.findByPk(planId);
-    if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
-    
-    // In a real app, you'd create a Stripe session here.
-    // Since we're in a demo/dev environment, we'll return a mock success.
-    res.json({ success: true, url: '#' });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+// Auth
+app.post('/api/profiles/login', async (req, res) => {
+  const p = await Profile.findOne({ where: { email: req.body.email } });
+  if (p && await bcrypt.compare(req.body.password, p.password)) {
+    const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+    res.json({ success: true, data: p, token });
+  } else res.status(401).json({ success: false, message: 'Invalid Credentials' });
+});
+
+app.post('/api/profiles/signup', async (req, res) => {
+  const hash = await bcrypt.hash(req.body.password || 'FitLife2024!', 10);
+  const p = await Profile.create({ ...req.body, password: hash });
+  const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+  res.status(201).json({ success: true, data: p, token });
 });
 
 export default app;
