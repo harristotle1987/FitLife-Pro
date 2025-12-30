@@ -28,7 +28,7 @@ const fetchSafe = async (url: string, options: any = {}) => {
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `Infrastructure Degraded: ${json.error || 'SSL Handshake Failed'}. Syncing database...` 
+          message: `Vault Offline: ${json.error || 'SSL Handshake Failed'}. Check DATABASE_URL in Vercel settings.` 
         }) 
       };
     }
@@ -44,7 +44,7 @@ const fetchSafe = async (url: string, options: any = {}) => {
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: `Network failure: ${e.message}. Check Vercel logs.` 
+        message: `Network failure: ${e.message}. The system is likely recalibrating.` 
       }) 
     };
   }
