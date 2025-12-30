@@ -13,24 +13,33 @@ const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y';
 
-// DB URL - Using provided encoded string
-const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
+// Explicitly define credentials to avoid URL encoding/parsing issues
+// Note: Colony082987%40 decoded is Colony082987@
+const dbConfig = {
+  host: "db.wyvgrmedubzooqmrorxb.supabase.co",
+  port: 5432,
+  database: "postgres",
+  user: "postgres",
+  password: "Colony082987@", 
+};
 
 const stripe = new Stripe(STRIPE_SECRET);
 
-// Optimized Sequelize for Serverless (Vercel)
-// We use a pool of 1 to prevent exhausting database connections across many lambda instances
-const sequelize = new Sequelize(dbUrl, {
+// Optimized Sequelize for Vercel/Serverless
+const sequelize = new Sequelize(dbConfig.database, dbConfig.user, dbConfig.password, {
+  host: dbConfig.host,
+  port: dbConfig.port,
   dialect: 'postgres',
   logging: false, 
   dialectOptions: { 
     ssl: { require: true, rejectUnauthorized: false },
-    connectTimeout: 10000 // 10s timeout for initial connection
+    connectTimeout: 20000, // Increase to 20s
+    keepAlive: true
   },
   pool: { 
     max: 1, 
     min: 0, 
-    acquire: 15000, 
+    acquire: 20000, 
     idle: 5000,
     evict: 5000 
   }
@@ -109,26 +118,21 @@ const checkRole = (roles) => (req, res, next) => {
 app.get('/api/health', async (req, res) => {
   try {
     await sequelize.authenticate();
-    res.json({ status: 'online', database: 'connected' });
+    res.json({ success: true, status: 'online', database: 'connected' });
   } catch (e) {
-    res.status(500).json({ status: 'error', message: e.message });
+    res.status(500).json({ success: false, status: 'error', message: e.message });
   }
 });
 
 app.get('/api/system/bootstrap', async (req, res) => {
-  console.info('[BOOTSTRAP] Starting database initialization...');
+  console.info('[BOOTSTRAP] Manual trigger initiated.');
   try {
-    // 1. Connection Check
     await sequelize.authenticate();
-    console.info('[BOOTSTRAP] Connection authenticated successfully.');
-
-    // 2. Sync Tables (Standard sync is faster than alter:true for serverless)
-    await sequelize.sync();
-    console.info('[BOOTSTRAP] Tables synchronized.');
+    // Use alter:false for faster performance during first-time setup
+    await sequelize.sync({ alter: false });
     
-    // 3. Seed Essential Data
     const hash = await bcrypt.hash('AdminPassword123!', 10);
-    const [adminUser] = await Profile.findOrCreate({ 
+    await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
@@ -138,11 +142,9 @@ app.get('/api/system/bootstrap', async (req, res) => {
       defaults: { name: 'Elena Nutritionist', password: hash, role: 'nutritionist' } 
     });
     
-    console.info('[BOOTSTRAP] Default accounts verified.');
-    res.json({ success: true, message: 'System initialized successfully.' });
+    res.json({ success: true, message: 'System initialized. Database ready.' });
   } catch (e) { 
-    console.error("[BOOTSTRAP ERROR] Fatal failure:", e.message);
-    res.status(500).json({ success: false, error: e.message, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined }); 
+    res.status(500).json({ success: false, message: `Bootstrap failed: ${e.message}` }); 
   }
 });
 
@@ -177,7 +179,10 @@ app.post('/api/leads', async (req, res) => {
     const l = await Lead.create(req.body);
     res.status(201).json({ success: true, data: l });
   } catch (e) { 
-    console.error("Lead creation error:", e.message);
+    // If table doesn't exist, tell the user to bootstrap
+    if (e.message.includes('relation "Leads" does not exist')) {
+        return res.status(503).json({ success: false, message: 'Database tables missing. Please run /api/system/bootstrap first.' });
+    }
     res.status(400).json({ success: false, message: e.message }); 
   }
 });
@@ -201,18 +206,30 @@ app.post('/api/progress', auth, checkRole(['super_admin', 'admin', 'nutritionist
 });
 
 app.get('/api/progress', auth, async (req, res) => {
-  const logs = await Progress.findAll({ where: { member_id: req.query.member_id }, order: [['date', 'DESC']] });
-  res.json({ success: true, data: logs });
+  try {
+    const logs = await Progress.findAll({ where: { member_id: req.query.member_id }, order: [['date', 'DESC']] });
+    res.json({ success: true, data: logs });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.get('/api/plans', async (req, res) => {
-  const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
-  res.json({ success: true, data: p });
+  try {
+    const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
+    res.json({ success: true, data: p });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.get('/api/testimonials/featured', async (req, res) => {
-  const t = await Testimonial.findAll({ where: { isFeatured: true } });
-  res.json({ success: true, data: t });
+  try {
+    const t = await Testimonial.findAll({ where: { isFeatured: true } });
+    res.json({ success: true, data: t });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 app.post('/api/stripe/create-checkout', auth, async (req, res) => {
@@ -234,6 +251,16 @@ app.post('/api/stripe/create-checkout', auth, async (req, res) => {
     });
     res.json({ success: true, url: session.url });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// GLOBAL ERROR HANDLER - ENSURES JSON RESPONSE
+app.use((err, req, res, next) => {
+  console.error('[UNHANDLED EXCEPTION]:', err);
+  res.status(500).json({
+    success: false,
+    message: 'A critical server error occurred.',
+    error: err.message
+  });
 });
 
 export default app;

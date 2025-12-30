@@ -21,29 +21,30 @@ const fetchSafe = async (url: string, options: any = {}) => {
     try {
       json = text ? JSON.parse(text) : {};
     } catch (e) {
+      // Handle the case where the server returns HTML (like a Vercel 500 page)
       return { 
         ok: false, 
         json: () => Promise.resolve({ 
           success: false, 
-          message: `Server returned non-JSON response (Status ${res.status}). Ensure backend is running.` 
+          message: `Server Error (Status ${res.status}): The backend returned an invalid response. This often happens during cold starts or if the database is unreachable.` 
         }) 
       };
     }
 
-    // If the server returned an error status but valid JSON, ensure success: false is present
-    if (!res.ok && json.success !== false) {
+    // If the server returned an error status but valid JSON
+    if (!res.ok) {
       json.success = false;
       json.message = json.message || `Request failed with status ${res.status}`;
     }
 
     return { ok: res.ok, json: () => Promise.resolve(json) };
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[VAULT CONNECTION ERROR] @ ${url}:`, e);
     return { 
       ok: false, 
       json: () => Promise.resolve({ 
         success: false, 
-        message: 'Network error: Connection to backend failed. Is your server running on port 5000?' 
+        message: `Network error: ${e.message || 'Connection to backend failed.'}` 
       }) 
     };
   }
