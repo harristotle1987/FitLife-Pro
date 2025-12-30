@@ -1,7 +1,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { Sequelize, DataTypes } from 'sequelize';
+import { Sequelize, DataTypes, Op } from 'sequelize';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -16,10 +16,11 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0
 
 const stripe = new Stripe(STRIPE_SECRET);
 
-// Database Connection
-const sequelize = new Sequelize('postgres', 'postgres', 'Colony082987@', {
-  host: "db.wyvgrmedubzooqmrorxb.supabase.co",
-  port: 5432,
+// --- DATABASE CONNECTION ---
+// Using new Project Ref: euuqfcglulkeyxaqcpvz
+const DB_URL = process.env.DATABASE_URL || "postgresql://postgres:Colony082987@db.euuqfcglulkeyxaqcpvz.supabase.co:5432/postgres";
+
+const sequelize = new Sequelize(DB_URL, {
   dialect: 'postgres',
   dialectModule: pg,
   logging: false, 
@@ -28,19 +29,19 @@ const sequelize = new Sequelize('postgres', 'postgres', 'Colony082987@', {
       require: true, 
       rejectUnauthorized: false 
     },
-    connectTimeout: 60000 
+    connectTimeout: 60000,
+    keepAlive: true
   },
   pool: { 
-    max: 2, 
+    max: 5, 
     min: 0, 
     acquire: 60000, 
-    idle: 5000 
+    idle: 10000 
   }
 });
 
 // --- MODELS ---
 
-// 1. Leads Table (Existing)
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -54,7 +55,6 @@ const Lead = sequelize.define('Lead', {
   timestamps: true 
 });
 
-// 2. Profiles Table (Needs Creation)
 const Profile = sequelize.define('Profile', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },
@@ -72,7 +72,6 @@ const Profile = sequelize.define('Profile', {
   timestamps: true 
 });
 
-// 3. Progress Table (Needs Creation)
 const Progress = sequelize.define('Progress', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   memberId: { type: DataTypes.UUID, allowNull: false },
@@ -87,7 +86,6 @@ const Progress = sequelize.define('Progress', {
   timestamps: true 
 });
 
-// 4. Plans Table (Existing)
 const TrainingPlan = sequelize.define('TrainingPlan', {
   id: { type: DataTypes.STRING, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },
@@ -103,7 +101,6 @@ const TrainingPlan = sequelize.define('TrainingPlan', {
   timestamps: true 
 });
 
-// 5. Testimonials Table (Existing)
 const Testimonial = sequelize.define('Testimonial', {
   clientName: { type: DataTypes.STRING, allowNull: false },
   clientTitle: { type: DataTypes.STRING },
@@ -136,30 +133,16 @@ const checkRole = (roles) => (req, res, next) => {
 
 // --- ROUTES ---
 
-app.get('/api/health', async (req, res) => {
-  try {
-    await sequelize.authenticate();
-    res.json({ success: true, status: 'online', database: 'connected' });
-  } catch (e) {
-    res.status(500).json({ success: false, status: 'error', message: e.message });
-  }
-});
-
 /**
  * BOOTSTRAP ROUTE
- * Visit this to create the 'profiles' and 'progress' tables
+ * Visit this to create missing tables and admin user.
  */
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    console.info('[BOOTSTRAP] Authenticating...');
     await sequelize.authenticate();
-    
-    console.info('[BOOTSTRAP] Syncing Tables...');
-    // This creates 'profiles' and 'progress' if they don't exist
     await sequelize.sync({ alter: true });
     
     const hash = await bcrypt.hash('AdminPassword123!', 10);
-    
     const [admin, created] = await Profile.findOrCreate({ 
       where: { email: 'admin@fitlife.pro' }, 
       defaults: { 
@@ -169,16 +152,13 @@ app.get('/api/system/bootstrap', async (req, res) => {
       } 
     });
     
-    res.json({ 
-      success: true, 
-      message: 'Database schema fully synchronized. Missing tables created.',
-      adminCreated: created
-    });
+    res.json({ success: true, message: 'Database synced.', adminCreated: created });
   } catch (e) { 
-    console.error('[BOOTSTRAP ERROR]', e);
-    res.status(500).json({ success: false, message: `Bootstrap failed: ${e.message}` }); 
+    res.status(500).json({ success: false, message: e.message }); 
   }
 });
+
+// --- PROFILE ROUTES ---
 
 app.post('/api/profiles/login', async (req, res) => {
   try {
@@ -194,12 +174,18 @@ app.post('/api/profiles/login', async (req, res) => {
 
 app.post('/api/profiles/signup', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role, activePlanId } = req.body;
     const existing = await Profile.findOne({ where: { email } });
     if (existing) return res.status(409).json({ success: false, message: 'Email already registered.' });
 
-    const hash = await bcrypt.hash(password, 10);
-    const p = await Profile.create({ name, email, password: hash, role: 'member' });
+    const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
+    const p = await Profile.create({ 
+      name, 
+      email, 
+      password: hash, 
+      role: role || 'member',
+      activePlanId: activePlanId || 'plan_starter'
+    });
     const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
     res.status(201).json({ success: true, data: p, token });
   } catch (e) {
@@ -211,36 +197,88 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   try {
     const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
     res.json({ success: true, data: p });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
+
+app.get('/api/profiles/:id', auth, async (req, res) => {
+  try {
+    const p = await Profile.findByPk(req.params.id, { attributes: { exclude: ['password'] } });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.get('/api/profiles', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
+  try {
+    const { role } = req.query;
+    const p = await Profile.findAll({ 
+      where: role ? { role } : {},
+      attributes: { exclude: ['password'] } 
+    });
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.patch('/api/profiles/:id', auth, async (req, res) => {
+  try {
+    const p = await Profile.findByPk(req.params.id);
+    if (!p) return res.status(404).json({ success: false, message: 'Profile not found' });
+    await p.update(req.body);
+    res.json({ success: true, data: p });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- PROGRESS ROUTES ---
+
+app.get('/api/progress', auth, async (req, res) => {
+  try {
+    const { member_id } = req.query;
+    const data = await Progress.findAll({ 
+      where: { memberId: member_id },
+      order: [['date', 'DESC']]
+    });
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post('/api/progress', auth, async (req, res) => {
+  try {
+    const log = await Progress.create(req.body);
+    res.status(201).json({ success: true, data: log });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- LEAD ROUTES ---
 
 app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
     res.status(201).json({ success: true, data: l });
-  } catch (e) { 
-    res.status(400).json({ success: false, message: e.message }); 
-  }
+  } catch (e) { res.status(400).json({ success: false, message: e.message }); }
 });
 
 app.get('/api/leads/all', auth, checkRole(['super_admin', 'admin']), async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
     res.json({ success: true, data: l });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
+
+app.patch('/api/leads/:id', auth, async (req, res) => {
+  try {
+    const l = await Lead.findByPk(req.params.id);
+    if (!l) return res.status(404).json({ success: false, message: 'Lead not found' });
+    await l.update(req.body);
+    res.json({ success: true, data: l });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// --- PLAN & STRIPE ROUTES ---
 
 app.get('/api/plans', async (req, res) => {
   try {
     const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/stripe/create-checkout', auth, async (req, res) => {
