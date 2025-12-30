@@ -67,8 +67,13 @@ const Profile = sequelize.define('Profile', {
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   password: { type: DataTypes.STRING, allowNull: false },
   role: { type: DataTypes.STRING, defaultValue: 'member' },
+  phone: { type: DataTypes.STRING },
+  avatar_url: { type: DataTypes.STRING },
+  bio: { type: DataTypes.TEXT },
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
+  assignedCoachId: { type: DataTypes.STRING },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' },
+  assignedNutritionistName: { type: DataTypes.STRING },
   nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
   ...timestampConfig
 }, { tableName: 'profiles', underscored: true, timestamps: true });
@@ -103,6 +108,20 @@ const auth = (req, res, next) => {
   } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
 };
 
+const adminAuth = (req, res, next) => {
+  const h = req.headers.authorization;
+  if (!h || !h.startsWith('Bearer ')) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(h.split(' ')[1], JWT_SECRET);
+    if (decoded.role === 'super_admin' || decoded.role === 'admin') {
+      req.user = decoded;
+      next();
+    } else {
+      res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+  } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
+};
+
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.query('SELECT 1+1 AS result');
@@ -114,23 +133,21 @@ app.get('/api/system/health', async (req, res) => {
 
 app.get('/api/system/bootstrap', async (req, res) => {
   try {
-    await sequelize.query(`
-      DO $$ 
-      DECLARE
-        t text;
-      BEGIN 
-        FOR t IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('plans', 'leads', 'profiles', 'testimonials')
-        LOOP
-          BEGIN
-            EXECUTE 'ALTER TABLE ' || t || ' ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()';
-            EXECUTE 'ALTER TABLE ' || t || ' ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()';
-          EXCEPTION WHEN others THEN NULL;
-          END;
-          EXECUTE 'UPDATE ' || t || ' SET created_at = NOW() WHERE created_at IS NULL';
-          EXECUTE 'UPDATE ' || t || ' SET updated_at = NOW() WHERE updated_at IS NULL';
-        END LOOP;
-      END $$;
-    `);
+    // Explicitly add missing columns to existing profiles table if needed
+    const columns = [
+      ['phone', 'TEXT'],
+      ['avatar_url', 'TEXT'],
+      ['bio', 'TEXT'],
+      ['assigned_coach_id', 'TEXT'],
+      ['assigned_coach_name', 'TEXT'],
+      ['assigned_nutritionist_name', 'TEXT'],
+      ['nutritional_protocol', 'TEXT'],
+      ['role', 'TEXT']
+    ];
+
+    for (const [col, type] of columns) {
+      await sequelize.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ${col} ${type}`).catch(() => {});
+    }
 
     await sequelize.sync({ alter: true });
     
@@ -140,42 +157,42 @@ app.get('/api/system/bootstrap', async (req, res) => {
       defaults: { name: 'Super Admin', password: hash, role: 'super_admin' } 
     });
 
-    if (await TrainingPlan.count() === 0) {
-      await TrainingPlan.bulkCreate([
-        { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational guidance.', features: ['Dashboard', 'Support'] },
-        { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'Rapid transformation.', features: ['Custom Programming', 'Direct Messaging'] },
-        { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Human optimization.', features: ['24/7 Support', 'Bio-feedback'] },
-        { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'VIP bespoke experience.', features: ['1-on-1 Coaching', 'Personal Chef Meal Planning'] }
-      ]);
-    }
-
-    if (await Testimonial.count() === 0) {
-      await Testimonial.bulkCreate([
-        { client_name: 'Sarah Jenkins', client_title: 'Executive Director', quote: "The Elite Executive plan changed my body and my clarity at work.", rating: 5 },
-        { client_name: 'Marcus V.', client_title: 'Founder', quote: "Pinnacle coaching is the only way to train. Surgical attention to detail.", rating: 5 },
-        { client_name: 'David L.', client_title: 'Software Architect', quote: "Science-backed results. Got to 8% body fat in record time.", rating: 5 }
-      ]);
-    }
-
-    res.json({ success: true, message: 'Infrastructure Ready and Sanitized.' });
+    res.json({ success: true, message: 'Vault Core Infrastructure Synchronized with Supabase.' });
   } catch (e) { 
     res.status(500).json({ success: false, error: e.message }); 
   }
 });
 
-app.get('/api/testimonials', async (req, res) => {
+app.post('/api/profiles/manual', adminAuth, async (req, res) => {
   try {
-    const t = await Testimonial.findAll({ order: [['created_at', 'DESC']] });
-    res.json({ success: true, data: t });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    const { name, email, password, role, activePlanId, phone } = req.body;
+    const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
+    
+    // Check if user exists
+    const exists = await Profile.findOne({ where: { email } });
+    if (exists) return res.status(400).json({ success: false, message: 'Identifier already exists in Vault.' });
+
+    const p = await Profile.create({
+      name,
+      email,
+      password: hash,
+      role: role || 'member',
+      phone: phone || '',
+      activePlanId: activePlanId || 'plan_starter'
+    });
+    res.json({ success: true, data: p });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
-app.get('/api/profiles', async (req, res) => {
+app.get('/api/profiles', adminAuth, async (req, res) => {
   try {
     const { role } = req.query;
     const profiles = await Profile.findAll({ 
       where: role ? { role } : {},
-      attributes: { exclude: ['password'] } 
+      attributes: { exclude: ['password'] },
+      order: [['created_at', 'DESC']]
     });
     res.json({ success: true, data: profiles });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
@@ -207,7 +224,7 @@ app.post('/api/leads', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/leads/all', auth, async (req, res) => {
+app.get('/api/leads/all', adminAuth, async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
     res.json({ success: true, data: l });

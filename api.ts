@@ -126,7 +126,7 @@ export const api = {
     return res.ok;
   },
   createProfile: async (data: any) => {
-    const res = await fetchSafe(`${API_BASE}/profiles/signup`, { method: 'POST', body: JSON.stringify(data) });
+    const res = await fetchSafe(`${API_BASE}/profiles/manual`, { method: 'POST', body: JSON.stringify(data) });
     return res.json();
   },
   getFinancialHealth: async (): Promise<FinancialHealthRecord[]> => {
