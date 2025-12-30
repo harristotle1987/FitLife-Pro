@@ -6,18 +6,19 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// --- 1. DATABASE CONFIGURATION (SUPABASE) ---
+// --- 1. DB CONNECTION ---
+// Password '@' is encoded as '%40'
 const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:Colony082987%40@db.wyvgrmedubzooqmrorxb.supabase.co:5432/postgres";
+
 const sequelize = new Sequelize(dbUrl, {
   dialect: 'postgres',
-  logging: false,
+  logging: false, 
   dialectOptions: {
     ssl: { require: true, rejectUnauthorized: false }
-  },
-  pool: { max: 10, min: 2, acquire: 30000, idle: 10000 }
+  }
 });
 
-// --- 2. DATA MODELS ---
+// --- 2. MODELS ---
 const Lead = sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -34,9 +35,6 @@ const Profile = sequelize.define('Profile', {
   password: { type: DataTypes.STRING, allowNull: false },
   role: { type: DataTypes.STRING, defaultValue: 'member' },
   activePlanId: { type: DataTypes.STRING, defaultValue: 'plan_starter' },
-  avatar_url: DataTypes.TEXT,
-  stripe_customer_id: DataTypes.STRING,
-  bio: { type: DataTypes.TEXT, defaultValue: 'Optimizing biological performance.' },
   assignedCoachName: { type: DataTypes.STRING, defaultValue: 'Coach Bolt' }
 });
 
@@ -53,13 +51,11 @@ const Progress = sequelize.define('Progress', {
 const TrainingPlan = sequelize.define('TrainingPlan', {
   id: { type: DataTypes.STRING, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },
-  description: DataTypes.TEXT,
   price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-  durationWeeks: DataTypes.INTEGER,
-  features: DataTypes.JSONB
+  description: DataTypes.TEXT
 });
 
-// --- 3. MIDDLEWARE ---
+// --- 3. AUTH & STRIPE ---
 const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y');
 
@@ -69,20 +65,17 @@ const auth = (req, res, next) => {
   try {
     req.user = jwt.verify(h.split(' ')[1], JWT_SECRET);
     next();
-  } catch (e) {
-    res.status(401).json({ success: false, message: 'Session expired' });
-  }
+  } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
 };
 
 const adminAuth = (req, res, next) => {
-  const allowed = ['admin', 'super_admin', 'nutritionist'];
-  if (!req.user || !allowed.includes(req.user.role)) {
-    return res.status(403).json({ success: false, message: 'Staff access level required' });
+  if (!['admin', 'super_admin', 'nutritionist'].includes(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'Staff Clearance Required' });
   }
   next();
 };
 
-// --- 4. EXPRESS APP & ROUTES ---
+// --- 4. APP SETUP ---
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -91,32 +84,21 @@ app.use(express.json());
 app.post('/api/profiles/signup', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    const existing = await Profile.findOne({ where: { email } });
-    if (existing) return res.status(409).json({ success: false, message: 'Email already in Vault' });
-
     const hash = await bcrypt.hash(password, 10);
     const p = await Profile.create({ name, email, password: hash, role: role || 'member' });
-    
     const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
     res.status(201).json({ success: true, data: p, token });
-  } catch (e) {
-    res.status(400).json({ success: false, message: e.message });
-  }
+  } catch (e) { res.status(400).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/profiles/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const p = await Profile.findOne({ where: { email } });
-    if (p && await bcrypt.compare(password, p.password)) {
+    const p = await Profile.findOne({ where: { email: req.body.email } });
+    if (p && await bcrypt.compare(req.body.password, p.password)) {
       const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
       res.json({ success: true, data: p, token });
-    } else {
-      res.status(401).json({ success: false, message: 'Security credentials rejected' });
-    }
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+    } else { res.status(401).json({ success: false, message: 'Invalid Credentials' }); }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.get('/api/profiles/me', auth, async (req, res) => {
@@ -124,19 +106,17 @@ app.get('/api/profiles/me', auth, async (req, res) => {
   res.json({ success: true, data: p });
 });
 
-app.get('/api/profiles/financial-health', auth, adminAuth, async (req, res) => {
-  const members = await Profile.findAll({ where: { role: 'member' } });
-  res.json({ success: true, data: members.map(p => ({
-    profile_id: p.id, athlete_name: p.name, email: p.email, status: 'active', monthly_rate: 199, next_billing: new Date().toISOString()
-  })) });
-});
-
-app.get('/api/profiles', auth, adminAuth, async (req, res) => {
-  const p = await Profile.findAll({ where: { role: req.query.role || 'member' }, order: [['createdAt', 'DESC']] });
+app.get('/api/profiles/:id', auth, async (req, res) => {
+  const p = await Profile.findByPk(req.params.id);
   res.json({ success: true, data: p });
 });
 
-// Leads
+app.get('/api/profiles', auth, adminAuth, async (req, res) => {
+  const p = await Profile.findAll({ where: { role: req.query.role || 'member' } });
+  res.json({ success: true, data: p });
+});
+
+// Lead Routes
 app.post('/api/leads', async (req, res) => {
   try {
     const l = await Lead.create(req.body);
@@ -145,8 +125,8 @@ app.post('/api/leads', async (req, res) => {
 });
 
 app.get('/api/leads/all', auth, adminAuth, async (req, res) => {
-  const leads = await Lead.findAll({ order: [['createdAt', 'DESC']] });
-  res.json({ success: true, data: leads });
+  const l = await Lead.findAll({ order: [['createdAt', 'DESC']] });
+  res.json({ success: true, data: l });
 });
 
 app.patch('/api/leads/:id', auth, adminAuth, async (req, res) => {
@@ -155,18 +135,9 @@ app.patch('/api/leads/:id', auth, adminAuth, async (req, res) => {
   else res.status(404).json({ success: false });
 });
 
-// Training Plans
-app.get('/api/plans', async (req, res) => {
-  const plans = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
-  res.json({ success: true, data: plans });
-});
-
-// Progress
+// Progress Routes
 app.get('/api/progress', auth, async (req, res) => {
-  const logs = await Progress.findAll({ 
-    where: { member_id: req.query.member_id }, 
-    order: [['date', 'DESC']] 
-  });
+  const logs = await Progress.findAll({ where: { member_id: req.query.member_id }, order: [['date', 'DESC']] });
   res.json({ success: true, data: logs });
 });
 
@@ -177,10 +148,16 @@ app.post('/api/progress', auth, adminAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ success: false, message: e.message }); }
 });
 
-// Stripe Checkout
+// Training Plans
+app.get('/api/plans', async (req, res) => {
+  const p = await TrainingPlan.findAll();
+  res.json({ success: true, data: p });
+});
+
+// Stripe
 app.post('/api/stripe/create-checkout', auth, async (req, res) => {
   try {
-    const { planId, email } = req.body;
+    const { planId } = req.body;
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
@@ -192,34 +169,35 @@ app.post('/api/stripe/create-checkout', auth, async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/?payment=success&plan=${planId}`,
+      success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/?payment=success`,
       cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/?payment=cancel`,
     });
     res.json({ success: true, url: session.url });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// --- 5. INITIALIZATION ---
+// --- 5. START SERVER ---
 const start = async () => {
   try {
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    console.log('✅ ENGINE: Online (Supabase)');
     
-    const count = await TrainingPlan.count();
-    if (count === 0) {
-      await TrainingPlan.bulkCreate([
-        { id: 'plan_starter', name: 'Starter Protocol', description: 'Foundation for new athletes.', price: 49.00, durationWeeks: 4, features: ['Dashboard Access', 'Community Support'] },
-        { id: 'plan_performance', name: 'Pro Performance', description: 'Advanced splits.', price: 199.00, durationWeeks: 12, features: ['Custom Splits', 'Direct Messaging'] },
-        { id: 'plan_executive', name: 'Elite Executive', description: 'Lifestyle optimization.', price: 499.00, durationWeeks: 16, features: ['24/7 Support', 'Bio-feedback'] },
-        { id: 'plan_pinnacle', name: 'The Pinnacle', description: 'Bespoke human engineering.', price: 1000.00, durationWeeks: 24, features: ['Private Access', 'The Recovery Kit'] }
-      ]);
-    }
+    // FRESH START: Wipe and Recreate Tables
+    await sequelize.sync({ force: true });
+    console.log('✅ SCHEMA: Rebuilt (Fresh Start)');
 
-    app.listen(5000, () => console.log('🚀 FITLIFE VAULT BACKEND ACTIVE ON PORT 5000'));
-  } catch (e) {
-    console.error('❌ CRITICAL ENGINE FAILURE:', e);
-  }
+    // Seed Plans
+    await TrainingPlan.bulkCreate([
+      { id: 'plan_starter', name: 'Starter Protocol', price: 49.00, description: 'Foundational digital guidance.' },
+      { id: 'plan_performance', name: 'Pro Performance', price: 199.00, description: 'High-intensity transformation.' },
+      { id: 'plan_executive', name: 'Elite Executive', price: 499.00, description: 'Bespoke human optimization.' },
+      { id: 'plan_pinnacle', name: 'The Pinnacle', price: 1000.00, description: 'The ultimate bespoke experience.' }
+    ]);
+    console.log('✅ PROTOCOLS: Initialized');
+
+    app.listen(5000, '0.0.0.0', () => {
+      console.log('🚀 VAULT ACTIVE: Port 5000');
+    });
+  } catch (e) { console.error('❌ SYSTEM ERROR:', e); }
 };
 start();

@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -10,17 +11,17 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    host: true,
+    host: "0.0.0.0", // Allows access from other devices on the same Wi-Fi
     strictPort: true,
     proxy: {
       '/api': {
-        // 127.0.0.1 avoids potential IPv6/localhost resolution issues
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
         secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/api'),
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
-            console.error('[CRITICAL PROXY ERROR] Ensure backend is running: node backend/server.js', err);
+            console.error('[VITE PROXY ERROR]: Ensure your backend (node server.js) is running on port 5000.', err);
           });
         },
       },
