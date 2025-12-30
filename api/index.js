@@ -127,6 +127,13 @@ const adminAuth = (req, res, next) => {
   } catch (e) { res.status(401).json({ success: false, message: 'Invalid Session' }); }
 };
 
+const permissionCheck = (permission) => (req, res, next) => {
+  if (req.user.role === 'super_admin' || (req.user.permissions && req.user.permissions[permission])) {
+    return next();
+  }
+  return res.status(403).json({ success: false, message: 'Forbidden: Insufficient Privileges' });
+};
+
 app.get('/api/system/health', async (req, res) => {
   try {
     await sequelize.query('SELECT 1+1 AS result');
@@ -152,9 +159,14 @@ app.get('/api/system/bootstrap', async (req, res) => {
   }
 });
 
-app.post('/api/profiles/manual', adminAuth, async (req, res) => {
+app.post('/api/profiles/manual', adminAuth, permissionCheck('canManageAdmins'), async (req, res) => {
   try {
     const { name, email, password, role, activePlanId, phone } = req.body;
+    
+    if (role === 'super_admin' && req.user.role !== 'super_admin') {
+       return res.status(403).json({ success: false, message: 'Only a Super Admin can create another Super Admin.' });
+    }
+
     const hash = await bcrypt.hash(password || 'FitLife2024!', 10);
     
     const exists = await Profile.findOne({ where: { email } });
@@ -167,7 +179,7 @@ app.post('/api/profiles/manual', adminAuth, async (req, res) => {
       role: role || 'member',
       phone: phone || '',
       activePlanId: activePlanId || 'plan_starter',
-      permissions: {}
+      permissions: role === 'admin' ? { canManageLeads: true, canManageProgress: true } : {}
     });
     res.json({ success: true, data: p });
   } catch (e) {
@@ -191,6 +203,19 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    
+    const targetUser = await Profile.findByPk(id);
+    if (!targetUser) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    if (req.user.role !== 'super_admin') {
+      if (updates.role || updates.permissions) {
+        return res.status(403).json({ success: false, message: 'Forbidden: Cannot change roles or permissions.' });
+      }
+      if (targetUser.role === 'super_admin' || (targetUser.role === 'admin' && targetUser.id !== req.user.id)) {
+        return res.status(403).json({ success: false, message: 'Forbidden: Insufficient privileges to modify this user.' });
+      }
+    }
+    
     delete updates.password;
     delete updates.id;
 
@@ -206,18 +231,18 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/profiles/:id', adminAuth, async (req, res) => {
+app.delete('/api/profiles/:id', adminAuth, permissionCheck('canManageAdmins'), async (req, res) => {
   try {
-    if (req.user.role !== 'super_admin') {
-       return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
     const { id } = req.params;
+    const targetUser = await Profile.findByPk(id);
+    if (targetUser && targetUser.role === 'super_admin') {
+      return res.status(403).json({ success: false, message: 'Super Admin cannot be deleted.' });
+    }
     const deleted = await Profile.destroy({ where: { id } });
     res.json({ success: !!deleted });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// Added missing public endpoint for lead capture
 app.post('/api/leads', async (req, res) => {
   try {
     const { name, email, phone, goal, source } = req.body;
@@ -235,14 +260,14 @@ app.post('/api/leads', async (req, res) => {
   }
 });
 
-app.get('/api/leads/all', adminAuth, async (req, res) => {
+app.get('/api/leads/all', adminAuth, permissionCheck('canManageLeads'), async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
     res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/leads/:id', adminAuth, async (req, res) => {
+app.patch('/api/leads/:id', adminAuth, permissionCheck('canManageLeads'), async (req, res) => {
   try {
     const { id } = req.params;
     await Lead.update(req.body, { where: { id } });
@@ -257,14 +282,14 @@ app.get('/api/plans', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/plans', adminAuth, async (req, res) => {
+app.post('/api/plans', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
   try {
     const p = await TrainingPlan.create(req.body);
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/plans/:id', adminAuth, async (req, res) => {
+app.patch('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
   try {
     await TrainingPlan.update(req.body, { where: { id: req.params.id } });
     const p = await TrainingPlan.findByPk(req.params.id);
@@ -272,14 +297,13 @@ app.patch('/api/plans/:id', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.delete('/api/plans/:id', adminAuth, async (req, res) => {
+app.delete('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
   try {
     const deleted = await TrainingPlan.destroy({ where: { id: req.params.id } });
     res.json({ success: !!deleted });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// Added missing checkout session endpoint
 app.post('/api/checkout', async (req, res) => {
   try {
     const { planId, email } = req.body;
@@ -307,7 +331,7 @@ app.post('/api/checkout', async (req, res) => {
   }
 });
 
-app.get('/api/progress', adminAuth, async (req, res) => {
+app.get('/api/progress', adminAuth, permissionCheck('canManageProgress'), async (req, res) => {
   try {
     const { member_id } = req.query;
     const p = await MemberProgress.findAll({ 
@@ -318,7 +342,7 @@ app.get('/api/progress', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/progress', adminAuth, async (req, res) => {
+app.post('/api/progress', adminAuth, permissionCheck('canManageProgress'), async (req, res) => {
   try {
     const p = await MemberProgress.create({ ...req.body, coach_id: req.user.id });
     res.json({ success: true, data: p });
@@ -329,7 +353,7 @@ app.post('/api/profiles/login', async (req, res) => {
   try {
     const p = await Profile.findOne({ where: { email: req.body.email } });
     if (p && await bcrypt.compare(req.body.password, p.password)) {
-      const token = jwt.sign({ id: p.id, role: p.role }, JWT_SECRET);
+      const token = jwt.sign({ id: p.id, role: p.role, permissions: p.permissions }, JWT_SECRET);
       res.json({ success: true, data: p, token });
     } else {
       res.status(401).json({ success: false, message: 'Invalid Credentials' });
