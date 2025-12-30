@@ -46,7 +46,6 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
       setFormData(prev => ({ ...prev, goal: prefilledGoal }));
       setHighlightGoal(true);
       
-      // Focus if visible
       if (goalInputRef.current) {
          goalInputRef.current.focus();
       }
@@ -55,6 +54,18 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
       return () => clearTimeout(timer);
     }
   }, [prefilledGoal]);
+
+  // Handle 5-second reset
+  useEffect(() => {
+    let timer: any;
+    if (submitStatus === 'success') {
+      timer = setTimeout(() => {
+        setSubmitStatus('idle');
+        setFormData({ name: '', email: '', phone: '', goal: '', source });
+      }, 5000);
+    }
+    return () => clearTimeout(timer);
+  }, [submitStatus, source]);
 
   const validate = (): boolean => {
     const newErrors: Partial<Record<keyof Lead, string>> = {};
@@ -74,11 +85,9 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
     setApiErrorMessage('');
 
     try {
-      // 1. Save to Database via API
       const dbResult = await api.submitLead(formData);
       
       if (dbResult.success) {
-        // 2. Trigger EmailJS Notification
         if (typeof emailjs !== 'undefined') {
           try {
             await emailjs.send(
@@ -94,18 +103,18 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
               }
             );
           } catch (e) {
-            console.warn("EmailJS failed, but DB succeeded:", e);
+            console.warn("EmailJS failed:", e);
           }
         }
         setSubmitStatus('success');
         if (onSuccess) onSuccess();
       } else {
         setSubmitStatus('error');
-        setApiErrorMessage(dbResult.message || 'System was unable to process your request.');
+        setApiErrorMessage(dbResult.message || 'System error.');
       }
     } catch (err: any) {
       setSubmitStatus('error');
-      setApiErrorMessage(err.message || 'Connectivity failure detected.');
+      setApiErrorMessage(err.message || 'Connectivity failure.');
     } finally {
       setIsSubmitting(false);
     }
@@ -113,23 +122,21 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
 
   if (submitStatus === 'success') {
     return (
-      <div className="bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-2xl p-8 text-center animate-fade-in shadow-2xl">
-        <CheckCircle className="w-16 h-16 text-fuchsia-500 mx-auto mb-4" />
-        <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter">PROTOCOL INITIATED</h3>
-        <p className="text-zinc-400 mt-2">A strategy specialist will contact you at {formData.phone} shortly.</p>
-        <button 
-          onClick={() => setSubmitStatus('idle')}
-          className="mt-6 text-fuchsia-500 font-black uppercase text-xs tracking-widest hover:underline"
-        >
-          Submit Another Request
-        </button>
+      <div className="bg-fuchsia-600/10 border border-fuchsia-500/30 rounded-2xl p-10 text-center animate-fade-in shadow-2xl">
+        <div className="relative mb-6">
+           <div className="absolute inset-0 bg-fuchsia-500/20 blur-2xl animate-pulse"></div>
+           <CheckCircle className="w-16 h-16 text-fuchsia-500 mx-auto relative z-10" />
+        </div>
+        <h3 className="text-3xl font-black text-white italic uppercase tracking-tighter">PROTOCOL INITIATED</h3>
+        <p className="text-zinc-400 mt-3 text-sm font-bold uppercase tracking-widest">A specialist will contact you shortly.</p>
+        <p className="text-[9px] text-zinc-600 mt-6 font-black uppercase tracking-[0.3em]">System refreshing in 5 seconds...</p>
       </div>
     );
   }
 
   const inputClasses = variant === 'seamless' 
-    ? "w-full bg-white/5 border border-white/10 text-white placeholder-zinc-600 rounded-xl px-4 py-4 focus:outline-none focus:ring-1 focus:ring-fuchsia-500 transition-all"
-    : "w-full bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-fuchsia-500 transition-all";
+    ? "w-full bg-white/5 border border-white/10 text-white placeholder-zinc-600 rounded-xl px-5 py-5 focus:outline-none focus:ring-1 focus:ring-fuchsia-500 transition-all font-bold"
+    : "w-full bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 rounded-xl px-5 py-4 focus:outline-none focus:ring-1 focus:ring-fuchsia-500 transition-all font-bold";
 
   const goalInputClasses = highlightGoal 
     ? `${inputClasses} ring-2 ring-fuchsia-500 bg-fuchsia-500/10` 
@@ -141,51 +148,51 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
         <div>
           <input 
             type="text" 
-            placeholder="Name" 
+            placeholder="Identity Name" 
             className={inputClasses} 
             value={formData.name}
             onChange={(e) => setFormData({...formData, name: e.target.value})}
           />
-          {errors.name && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-bold">{errors.name}</p>}
+          {errors.name && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-black tracking-widest">{errors.name}</p>}
         </div>
         <div>
           <input 
             type="email" 
-            placeholder="Email" 
+            placeholder="Vault Email" 
             className={inputClasses} 
             value={formData.email}
             onChange={(e) => setFormData({...formData, email: e.target.value})}
           />
-          {errors.email && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-bold">{errors.email}</p>}
+          {errors.email && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-black tracking-widest">{errors.email}</p>}
         </div>
       </div>
       <div>
         <input 
           type="tel" 
-          placeholder="Phone Number" 
+          placeholder="Contact Number" 
           className={inputClasses} 
           value={formData.phone}
           onChange={(e) => setFormData({...formData, phone: e.target.value})}
         />
-        {errors.phone && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-bold">{errors.phone}</p>}
+        {errors.phone && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-black tracking-widest">{errors.phone}</p>}
       </div>
       <div>
         <textarea 
           ref={goalInputRef}
-          placeholder="What is your primary goal?" 
+          placeholder="Define Your Biological Target / Primary Goal" 
           rows={3} 
           className={`${goalInputClasses} resize-none`} 
           value={formData.goal}
           onChange={(e) => setFormData({...formData, goal: e.target.value})}
         />
-        {errors.goal && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-bold">{errors.goal}</p>}
+        {errors.goal && <p className="text-[10px] text-fuchsia-500 mt-1 uppercase font-black tracking-widest">{errors.goal}</p>}
       </div>
       
       {submitStatus === 'error' && (
-        <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500">
+        <div className="flex items-center gap-3 p-5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500">
            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-           <p className="text-[10px] font-black uppercase tracking-widest leading-tight">
-             {apiErrorMessage}
+           <p className="text-[10px] font-black uppercase tracking-[0.2em] leading-tight">
+             ERROR: {apiErrorMessage}
            </p>
         </div>
       )}
@@ -193,12 +200,12 @@ const LeadForm: React.FC<LeadFormProps> = ({ source, prefilledGoal = '', onSucce
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white py-5 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center transition-all disabled:opacity-50"
+        className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white py-6 rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] flex items-center justify-center transition-all disabled:opacity-50 shadow-xl active:scale-95"
       >
         {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (
           <>
-            Initiate Strategy Call
-            <ArrowRight className="ml-2 w-5 h-5" />
+            Initiate Strategy Session
+            <ArrowRight className="ml-3 w-4 h-4" />
           </>
         )}
       </button>

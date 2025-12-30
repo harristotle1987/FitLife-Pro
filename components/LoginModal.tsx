@@ -32,38 +32,28 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
           onLoginSuccess(response.data);
           onClose();
         } else {
-          setError(response.message || 'Vault credentials mismatch. Identity not verified.');
-          // Show repair option if it looks like a database sync issue
+          setError(response.message || 'Vault credentials mismatch.');
           if (response.message?.toLowerCase().includes('sync') || response.message?.toLowerCase().includes('column')) {
             setShowRepair(true);
           }
         }
       } else {
         if (!name.trim()) {
-          setError('Athlete name required for protocol initialization.');
+          setError('Athlete name required.');
           setLoading(false);
           return;
         }
-        if (password.length < 6) {
-          setError('Security requirement: Password must be at least 6 characters.');
-          setLoading(false);
-          return;
-        }
-        
         const response = await api.register(name, email, password);
         if (response.success && response.data) {
           onLoginSuccess(response.data);
           onClose();
         } else {
-          setError(response.message || 'Identity conflict or infrastructure offline. Entry rejected.');
+          setError(response.message || 'Identity conflict or infrastructure offline.');
         }
       }
     } catch (err: any) {
-      console.error("Auth Exception:", err);
-      setError(err.message || 'System infrastructure timeout. Please retry.');
-      if (err.message?.toLowerCase().includes('column') || err.message?.toLowerCase().includes('exist')) {
-        setShowRepair(true);
-      }
+      setError(err.message || 'System infrastructure timeout.');
+      setShowRepair(true);
     } finally {
       setLoading(false);
     }
@@ -72,16 +62,19 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
   const handleRepair = async () => {
     setRepairing(true);
     try {
-      const ok = await api.bootstrapDatabase();
-      if (ok) {
-        alert("Vault Infrastructure Repaired. Try logging in again.");
+      // Call public bootstrap endpoint
+      const res = await fetch('/api/system/bootstrap');
+      const data = await res.json();
+      
+      if (data.success) {
+        alert("VAULT REPAIRED: Core Infrastructure Re-aligned. Please login now.");
         setShowRepair(false);
         setError('');
       } else {
-        alert("Repair failed. Please check backend connection.");
+        alert(`REPAIR FAILED: ${data.error || 'Unknown infrastructure error'}`);
       }
-    } catch (err) {
-      alert("Network error during repair.");
+    } catch (err: any) {
+      alert(`NETWORK ERROR: ${err.message}. Ensure your database is reachable.`);
     } finally {
       setRepairing(false);
     }
@@ -184,7 +177,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
             }}
             className="text-fuchsia-500 hover:text-fuchsia-400 text-[11px] font-black uppercase tracking-[0.2em] transition-colors"
           >
-            {mode === 'login' ? "New Member? Register Strategy" : "Existing Member? Return to Vault"}
+            {mode === 'login' ? "New Member? Register" : "Already Member? Login"}
           </button>
 
           <div className="flex flex-col items-center gap-2">
@@ -192,7 +185,6 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginSuccess }) => {
               <ShieldCheck className="w-3 h-3" /> Encrypted by FP infrastructure
             </p>
             <div className="flex gap-4">
-               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[8px] text-zinc-700 hover:text-zinc-500 uppercase font-black transition-colors underline">System Status</a>
                <button 
                  onClick={() => setShowRepair(!showRepair)} 
                  className="text-[8px] text-zinc-800 hover:text-zinc-600 uppercase font-black transition-colors flex items-center gap-1"
