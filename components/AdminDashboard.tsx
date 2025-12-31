@@ -297,7 +297,7 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
         </div>
         
         <nav className="flex-1 space-y-2">
-          <button onClick={onGoHome} className="w-full flex items-center px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-white hover:bg-white/5 transition-all">
+          <button type="button" onClick={(e) => { e.preventDefault(); onGoHome(); }} className="w-full flex items-center px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-white hover:bg-white/5 transition-all">
             <Home className="w-4 h-4 mr-4" /> Go Home
           </button>
           <div className="h-px bg-white/5 my-4 mx-4" />
