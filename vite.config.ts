@@ -9,11 +9,22 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      react(),
+      react(), // Defaults to automatic runtime, matching tsconfig "jsx": "react-jsx"
     ],
     define: {
       // Securely inject the API key into the frontend build
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
+    },
+    optimizeDeps: {
+      include: [
+        'react', 
+        'react-dom', 
+        'react/jsx-runtime', 
+        'react/jsx-dev-runtime',
+        'lucide-react', 
+        'framer-motion', 
+        '@google/genai'
+      ],
     },
     server: {
       port: 3000,
@@ -36,17 +47,6 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: true,
-      rollupOptions: {
-        external: ['react', 'react-dom', 'lucide-react', 'framer-motion', '@google/genai'],
-        output: {
-          globals: {
-            react: 'React',
-            'react-dom': 'ReactDOM',
-            'lucide-react': 'lucide',
-            '@google/genai': 'GoogleGenAI'
-          }
-        }
-      }
     },
   };
 });
