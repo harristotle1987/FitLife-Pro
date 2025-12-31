@@ -58,7 +58,7 @@ const App = () => {
     return (
       <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center gap-6">
         <Loader2 className="w-12 h-12 text-fuchsia-600 animate-spin" />
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-zinc-600">Syncing Growth Matrix...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-zinc-600">INITIALIZING VAULT INTERFACE...</p>
       </div>
     );
   }

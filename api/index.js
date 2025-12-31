@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
@@ -388,5 +389,17 @@ app.get('/api/profiles/me', auth, checkDb, async (req, res) => {
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
+
+// START SERVER (LOCAL DEVELOPMENT)
+// This block only runs if this file is executed directly (e.g. `node api/index.js`)
+// Vercel imports the app, so this block is skipped in production there.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Backend API running on http://localhost:${PORT}`);
+    console.log(`- Ensure your Vite frontend is running on http://localhost:3000`);
+    console.log(`- Connection String: ${process.env.DATABASE_URL ? 'Loaded' : 'Missing (Check .env)'}`);
+  });
+}
 
 export default app;
