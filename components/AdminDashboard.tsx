@@ -196,8 +196,16 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
     e.preventDefault();
     if (!editingUser) return;
     setIsSavingAssignment(true);
+    
+    // Clean payload for non-super admins to prevent 403s from backend
+    const payload = { ...assignmentData };
+    if (!permissions.isSuper) {
+        delete payload.role;
+        delete payload.permissions;
+    }
+
     try {
-      const res = await api.updateProfile(editingUser.id, assignmentData);
+      const res = await api.updateProfile(editingUser.id, payload);
       if (res.success) {
         setEditingUser(null);
         loadAll();
@@ -372,7 +380,81 @@ const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLog
 
               <form onSubmit={handleSaveAssignment} className="space-y-6">
                 
-                {/* User details form fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">Full Name</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm"
+                      value={assignmentData.name || ''} 
+                      onChange={e => setAssignmentData({...assignmentData, name: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">Email Address</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm"
+                      value={assignmentData.email || ''} 
+                      onChange={e => setAssignmentData({...assignmentData, email: e.target.value})} 
+                    />
+                  </div>
+                   <div>
+                    <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">Phone Number</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm"
+                      value={assignmentData.phone || ''} 
+                      onChange={e => setAssignmentData({...assignmentData, phone: e.target.value})} 
+                    />
+                  </div>
+
+                  {permissions.isSuper && (
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">System Role</label>
+                      <select 
+                        className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm appearance-none"
+                        value={assignmentData.role}
+                        onChange={e => setAssignmentData({...assignmentData, role: e.target.value as any})}
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                        <option value="nutritionist">Nutritionist</option>
+                        <option value="super_admin">Super Admin</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {assignmentData.role === 'member' && (
+                    <>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">Active Protocol</label>
+                        <select 
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm appearance-none"
+                          value={assignmentData.activePlanId}
+                          onChange={e => setAssignmentData({...assignmentData, activePlanId: e.target.value})}
+                        >
+                          {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                       <div>
+                        <label className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-1">Assigned Coach</label>
+                        <select 
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:border-fuchsia-500 outline-none font-bold text-sm appearance-none"
+                          value={assignmentData.assignedCoachId || ''}
+                          onChange={e => {
+                             const coach = admins.find(a => a.id === e.target.value);
+                             setAssignmentData({
+                               ...assignmentData, 
+                               assignedCoachId: e.target.value,
+                               assignedCoachName: coach?.name || 'Unassigned'
+                             });
+                          }}
+                        >
+                          <option value="">Select Coach...</option>
+                          {admins.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
                 
                 {(assignmentData.role === 'admin' || assignmentData.role === 'nutritionist') && permissions.isSuper && (
                    <div className="space-y-4 pt-4 border-t border-white/5">

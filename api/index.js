@@ -14,44 +14,53 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'fitlife_vault_key_2024';
-const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_51Pubx8P1qC7BzO0wxjFThVG8TkyWBV6PtKUb3w8OpsYzC1w6rI9FS5xXtFqSyhS9CnUYGEHRIpU6LEkjfyQlrVkC009KGTGs8Y';
+const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 
-const stripe = new Stripe(STRIPE_SECRET);
+if (!STRIPE_SECRET) {
+  console.warn("STRIPE_SECRET_KEY is missing. Payments will fail.");
+}
 
-const DB_PASSWORD = "Colony082987Fit";
-const DEFAULT_REF = "euuqfcglulkeyxaqcpvz";
+const stripe = new Stripe(STRIPE_SECRET || 'dummy_key_for_init');
 
 function getConnectionString() {
-  let url = process.env.DATABASE_URL;
-  if (url) {
-    const cleanUrl = url.split('?')[0];
-    return `${cleanUrl}?sslmode=require`;
+  if (process.env.DATABASE_URL) {
+    return `${process.env.DATABASE_URL}?sslmode=require`;
   }
-  const user = `postgres.${DEFAULT_REF}`;
-  const host = `aws-1-eu-west-1.pooler.supabase.com`;
-  return `postgresql://${user}:${DB_PASSWORD}@${host}:6543/postgres?sslmode=require`;
+  // Fallback for local development if variables aren't set, but secure for git
+  console.warn("DATABASE_URL is missing. Please set it in your environment variables.");
+  return process.env.DATABASE_URL || '';
 }
 
 pg.defaults.ssl = true;
 
-const sequelize = new Sequelize(getConnectionString(), {
-  dialect: 'postgres',
-  dialectModule: pg,
-  logging: false, 
-  dialectOptions: {
-    ssl: { require: true, rejectUnauthorized: false },
-    keepAlive: true,
-    connectTimeout: 60000
-  },
-  pool: { max: 5, min: 1, acquire: 60000, idle: 10000 }
-});
+// Ensure we have a connection string before initializing Sequelize
+const connectionString = getConnectionString();
+let sequelize;
+
+if (connectionString) {
+  sequelize = new Sequelize(connectionString, {
+    dialect: 'postgres',
+    dialectModule: pg,
+    logging: false, 
+    dialectOptions: {
+      ssl: { require: true, rejectUnauthorized: false },
+      keepAlive: true,
+      connectTimeout: 60000
+    },
+    pool: { max: 5, min: 1, acquire: 60000, idle: 10000 }
+  });
+} else {
+  // Mock sequelize for build phase if needed, or throw error
+  console.error("Critical: Database connection string is missing.");
+}
 
 const timestampConfig = {
   created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
   updated_at: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 };
 
-const Lead = sequelize.define('Lead', {
+// Define Models only if sequelize is initialized
+const Lead = sequelize ? sequelize.define('Lead', {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   phone: { type: DataTypes.STRING, allowNull: false },
@@ -59,9 +68,9 @@ const Lead = sequelize.define('Lead', {
   source: { type: DataTypes.STRING, defaultValue: 'Contact_Form' },
   status: { type: DataTypes.STRING, defaultValue: 'New' },
   ...timestampConfig
-}, { tableName: 'leads', underscored: true, timestamps: true });
+}, { tableName: 'leads', underscored: true, timestamps: true }) : null;
 
-const Profile = sequelize.define('Profile', {
+const Profile = sequelize ? sequelize.define('Profile', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -77,18 +86,18 @@ const Profile = sequelize.define('Profile', {
   nutritionalProtocol: { type: DataTypes.TEXT, defaultValue: 'Pending metabolic assessment.' },
   permissions: { type: DataTypes.JSONB, defaultValue: {} },
   ...timestampConfig
-}, { tableName: 'profiles', underscored: true, timestamps: true });
+}, { tableName: 'profiles', underscored: true, timestamps: true }) : null;
 
-const TrainingPlan = sequelize.define('TrainingPlan', {
+const TrainingPlan = sequelize ? sequelize.define('TrainingPlan', {
   id: { type: DataTypes.STRING, primaryKey: true },
   name: { type: DataTypes.STRING, allowNull: false },
   price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   description: DataTypes.TEXT,
   features: { type: DataTypes.JSONB, defaultValue: [] },
   ...timestampConfig
-}, { tableName: 'plans', underscored: true, timestamps: true });
+}, { tableName: 'plans', underscored: true, timestamps: true }) : null;
 
-const MemberProgress = sequelize.define('MemberProgress', {
+const MemberProgress = sequelize ? sequelize.define('MemberProgress', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   member_id: { type: DataTypes.UUID, allowNull: false },
   date: { type: DataTypes.DATE, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
@@ -99,7 +108,7 @@ const MemberProgress = sequelize.define('MemberProgress', {
   coach_id: { type: DataTypes.UUID },
   coach_name: { type: DataTypes.STRING },
   ...timestampConfig
-}, { tableName: 'member_progress', underscored: true, timestamps: true });
+}, { tableName: 'member_progress', underscored: true, timestamps: true }) : null;
 
 app.use(cors());
 app.use(express.json());
@@ -134,7 +143,15 @@ const permissionCheck = (permission) => (req, res, next) => {
   return res.status(403).json({ success: false, message: 'Forbidden: Insufficient Privileges' });
 };
 
-app.get('/api/system/health', async (req, res) => {
+// Middleware to check if DB is ready
+const checkDb = (req, res, next) => {
+  if (!sequelize) {
+    return res.status(503).json({ success: false, message: 'Database not configured. Set DATABASE_URL.' });
+  }
+  next();
+};
+
+app.get('/api/system/health', checkDb, async (req, res) => {
   try {
     await sequelize.query('SELECT 1+1 AS result');
     res.json({ success: true, status: 'operational', host: sequelize.config.host });
@@ -143,7 +160,7 @@ app.get('/api/system/health', async (req, res) => {
   }
 });
 
-app.get('/api/system/bootstrap', async (req, res) => {
+app.get('/api/system/bootstrap', checkDb, async (req, res) => {
   try {
     await sequelize.sync({ alter: true });
     
@@ -159,7 +176,7 @@ app.get('/api/system/bootstrap', async (req, res) => {
   }
 });
 
-app.post('/api/profiles/manual', adminAuth, permissionCheck('canManageAdmins'), async (req, res) => {
+app.post('/api/profiles/manual', adminAuth, permissionCheck('canManageAdmins'), checkDb, async (req, res) => {
   try {
     const { name, email, password, role, activePlanId, phone } = req.body;
     
@@ -187,7 +204,7 @@ app.post('/api/profiles/manual', adminAuth, permissionCheck('canManageAdmins'), 
   }
 });
 
-app.get('/api/profiles', adminAuth, async (req, res) => {
+app.get('/api/profiles', adminAuth, checkDb, async (req, res) => {
   try {
     const { role } = req.query;
     const profiles = await Profile.findAll({ 
@@ -199,7 +216,7 @@ app.get('/api/profiles', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
+app.patch('/api/profiles/:id', adminAuth, checkDb, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -231,7 +248,7 @@ app.patch('/api/profiles/:id', adminAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/profiles/:id', adminAuth, permissionCheck('canManageAdmins'), async (req, res) => {
+app.delete('/api/profiles/:id', adminAuth, permissionCheck('canManageAdmins'), checkDb, async (req, res) => {
   try {
     const { id } = req.params;
     const targetUser = await Profile.findByPk(id);
@@ -243,7 +260,7 @@ app.delete('/api/profiles/:id', adminAuth, permissionCheck('canManageAdmins'), a
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/leads', async (req, res) => {
+app.post('/api/leads', checkDb, async (req, res) => {
   try {
     const { name, email, phone, goal, source } = req.body;
     if (!name || !email || !phone) {
@@ -260,14 +277,14 @@ app.post('/api/leads', async (req, res) => {
   }
 });
 
-app.get('/api/leads/all', adminAuth, permissionCheck('canManageLeads'), async (req, res) => {
+app.get('/api/leads/all', adminAuth, permissionCheck('canManageLeads'), checkDb, async (req, res) => {
   try {
     const l = await Lead.findAll({ order: [['created_at', 'DESC']] });
     res.json({ success: true, data: l });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/leads/:id', adminAuth, permissionCheck('canManageLeads'), async (req, res) => {
+app.patch('/api/leads/:id', adminAuth, permissionCheck('canManageLeads'), checkDb, async (req, res) => {
   try {
     const { id } = req.params;
     await Lead.update(req.body, { where: { id } });
@@ -275,21 +292,21 @@ app.patch('/api/leads/:id', adminAuth, permissionCheck('canManageLeads'), async 
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/plans', async (req, res) => {
+app.get('/api/plans', checkDb, async (req, res) => {
   try {
     const p = await TrainingPlan.findAll({ order: [['price', 'ASC']] });
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/plans', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
+app.post('/api/plans', adminAuth, permissionCheck('canManagePlans'), checkDb, async (req, res) => {
   try {
     const p = await TrainingPlan.create(req.body);
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.patch('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
+app.patch('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), checkDb, async (req, res) => {
   try {
     await TrainingPlan.update(req.body, { where: { id: req.params.id } });
     const p = await TrainingPlan.findByPk(req.params.id);
@@ -297,18 +314,22 @@ app.patch('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), async 
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.delete('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), async (req, res) => {
+app.delete('/api/plans/:id', adminAuth, permissionCheck('canManagePlans'), checkDb, async (req, res) => {
   try {
     const deleted = await TrainingPlan.destroy({ where: { id: req.params.id } });
     res.json({ success: !!deleted });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/checkout', async (req, res) => {
+app.post('/api/checkout', checkDb, async (req, res) => {
   try {
     const { planId, email } = req.body;
     const plan = await TrainingPlan.findByPk(planId);
     if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+    if (!stripe._api.auth) {
+       return res.status(500).json({ success: false, message: 'Payment gateway not configured (Missing STRIPE_SECRET_KEY).' });
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -331,7 +352,7 @@ app.post('/api/checkout', async (req, res) => {
   }
 });
 
-app.get('/api/progress', adminAuth, permissionCheck('canManageProgress'), async (req, res) => {
+app.get('/api/progress', adminAuth, permissionCheck('canManageProgress'), checkDb, async (req, res) => {
   try {
     const { member_id } = req.query;
     const p = await MemberProgress.findAll({ 
@@ -342,14 +363,14 @@ app.get('/api/progress', adminAuth, permissionCheck('canManageProgress'), async 
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/progress', adminAuth, permissionCheck('canManageProgress'), async (req, res) => {
+app.post('/api/progress', adminAuth, permissionCheck('canManageProgress'), checkDb, async (req, res) => {
   try {
     const p = await MemberProgress.create({ ...req.body, coach_id: req.user.id });
     res.json({ success: true, data: p });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post('/api/profiles/login', async (req, res) => {
+app.post('/api/profiles/login', checkDb, async (req, res) => {
   try {
     const p = await Profile.findOne({ where: { email: req.body.email } });
     if (p && await bcrypt.compare(req.body.password, p.password)) {
@@ -361,7 +382,7 @@ app.post('/api/profiles/login', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('/api/profiles/me', auth, async (req, res) => {
+app.get('/api/profiles/me', auth, checkDb, async (req, res) => {
   try {
     const p = await Profile.findByPk(req.user.id, { attributes: { exclude: ['password'] } });
     res.json({ success: true, data: p });

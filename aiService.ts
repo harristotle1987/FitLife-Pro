@@ -1,5 +1,4 @@
-
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { MemberProgress } from "./types.ts";
 
 const SYSTEM_PROMPT = `You are COACH BOLT, a world-class High-Performance Executive Fitness Coach. 
@@ -83,7 +82,7 @@ export class FitnessChatSession {
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       callbacks,
       config: {
-        responseModalities: ['AUDIO'],
+        responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
         },

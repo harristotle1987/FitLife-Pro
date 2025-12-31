@@ -13,7 +13,7 @@ import { GoogleGenAI } from "@google/genai";
 // --- ADMIN DASHBOARD ---
 export const AdminDashboard = ({ user, onLogout, onGoHome }: { user: UserProfile, onLogout: () => void, onGoHome: () => void }) => {
   const [activeTab, setActiveTab] = useState('leads');
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads] = useState<Lead[]>(([]);
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<UserProfile | null>(null);
