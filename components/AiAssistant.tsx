@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Sparkles, Loader2 } from 'lucide-react';
-import { createChatSession, FitnessChatSession } from '../aiService.ts';
-import * as assets from '../assets.ts';
+import { createChatSession, FitnessChatSession } from '../aiService';
+import * as assets from '../assets';
 
 interface AiAssistantProps {
   onRecommendation: (recommendation: string) => void;

@@ -1,8 +1,8 @@
 
 import React from 'react';
-import LeadForm from './LeadForm.tsx';
-import RevealOnScroll from './RevealOnScroll.tsx';
-import * as assets from '../assets.ts';
+import LeadForm from './LeadForm';
+import RevealOnScroll from './RevealOnScroll';
+import * as assets from '../assets';
 
 interface ContactProps {
   prefilledGoal: string;

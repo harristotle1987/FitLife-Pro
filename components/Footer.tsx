@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { Instagram, Twitter, Facebook, ChevronUp } from 'lucide-react';
-import RevealOnScroll from './RevealOnScroll.tsx';
-import { InfoModalType } from './InfoModals.tsx';
+import RevealOnScroll from './RevealOnScroll';
+import { InfoModalType } from './InfoModals';
 
 interface FooterProps {
   onCtaClick: () => void;

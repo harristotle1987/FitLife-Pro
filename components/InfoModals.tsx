@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { X, Shield, FileText, HelpCircle, ChevronRight } from 'lucide-react';
-import RevealOnScroll from './RevealOnScroll.tsx'; // Added missing .tsx extension
+import RevealOnScroll from './RevealOnScroll';
 
 export type InfoModalType = 'privacy' | 'terms' | 'faq' | null;
 

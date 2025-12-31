@@ -1,6 +1,6 @@
 
-import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord, Testimonial } from './types.ts';
-import { TRAINING_PLANS, TESTIMONIALS } from './constants.ts';
+import { UserProfile, Lead, TrainingPlan, MemberProgress, FinancialHealthRecord, Testimonial } from './types';
+import { TRAINING_PLANS, TESTIMONIALS } from './constants';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'fitlife_vault_key_2024';

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import RevealOnScroll from './RevealOnScroll.tsx';
-import * as assets from '../assets.ts';
+import RevealOnScroll from './RevealOnScroll';
+import * as assets from '../assets';
 
 const Nutrition = () => {
   return (

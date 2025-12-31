@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Lead } from '../types.ts';
+import { Lead } from '../types';
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
-import { api } from '../api.ts';
+import { api } from '../api';
 
 // EmailJS Global Reference
 declare var emailjs: any;

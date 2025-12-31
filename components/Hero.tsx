@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PlayCircle, X, ChevronRight } from 'lucide-react';
-import * as assets from '../assets.ts';
+import * as assets from '../assets';
 
 interface HeroProps {
   onCtaClick: () => void;

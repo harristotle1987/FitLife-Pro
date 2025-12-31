@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { TrainingPlan } from '../types.ts';
-import PlanCard from './PlanCard.tsx';
-import RevealOnScroll from './RevealOnScroll.tsx';
-import * as assets from '../assets.ts';
+import { TrainingPlan } from '../types';
+import PlanCard from './PlanCard';
+import RevealOnScroll from './RevealOnScroll';
+import * as assets from '../assets';
 
 interface ServicesProps {
   plans: TrainingPlan[];

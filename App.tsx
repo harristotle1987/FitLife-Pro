@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import HomePage from './HomePage.tsx';
-import AdminDashboard from './components/AdminDashboard.tsx';
-import MemberDashboard from './components/MemberDashboard.tsx';
-import LoginModal from './components/LoginModal.tsx';
-import { UserProfile } from './types.ts';
-import { api } from './api.ts';
+import HomePage from './HomePage';
+import AdminDashboard from './components/AdminDashboard';
+import MemberDashboard from './components/MemberDashboard';
+import LoginModal from './components/LoginModal';
+import { UserProfile } from './types';
+import { api } from './api';
 import { Loader2 } from 'lucide-react';
 
 const App = () => {

@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
-import { MemberProgress } from "./types.ts";
+import { MemberProgress } from "./types";
 
 const SYSTEM_PROMPT = `You are COACH BOLT, a world-class High-Performance Executive Fitness Coach. 
 Your tone is intense, professional, data-driven, and high-energy. You do not accept excuses. 

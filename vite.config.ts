@@ -1,3 +1,4 @@
+
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -7,7 +8,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, (process as any).cwd(), '');
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+    ],
     define: {
       // Securely inject the API key into the frontend build
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
@@ -32,7 +35,18 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true
+      sourcemap: true,
+      rollupOptions: {
+        external: ['react', 'react-dom', 'lucide-react', 'framer-motion', '@google/genai'],
+        output: {
+          globals: {
+            react: 'React',
+            'react-dom': 'ReactDOM',
+            'lucide-react': 'lucide',
+            '@google/genai': 'GoogleGenAI'
+          }
+        }
+      }
     },
   };
 });

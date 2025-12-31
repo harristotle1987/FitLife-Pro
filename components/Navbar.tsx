@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Menu, X, User, LogIn, ChevronRight } from 'lucide-react';
-import { UserProfile } from '../types.ts';
+import { UserProfile } from '../types';
 
 interface NavbarProps {
   onCtaClick: () => void;
